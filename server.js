@@ -25,63 +25,133 @@ REGRAS:
 - Não invente preços ou prazos — diga que a equipe confirmará.
 - Se o cliente perguntar sobre produto específico, use o Bling para verificar estoque.`;
 
-app.post("/chat", async (req, res) => {
-  const { messages } = req.body;
-  if (!messages || !Array.isArray(messages)) {
-    return res.status(400).json({ error: "messages inválido" });
-  }
+const CHAT_HTML = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ace - Mais Acessível</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; display: flex; flex-direction: column; height: 100vh; }
+#header { background: #1a2f5a; color: #fff; padding: 12px 16px; display: flex; align-items: center; gap: 10px; }
+#header img { width: 36px; height: 36px; border-radius: 50%; }
+#header .info h3 { font-size: 15px; font-weight: 600; }
+#header .info p { font-size: 11px; color: #a0b4cc; }
+#messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.msg { max-width: 82%; padding: 10px 14px; border-radius: 16px; font-size: 14px; line-height: 1.5; }
+.msg.bot { background: #fff; color: #222; border-bottom-left-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); align-self: flex-start; }
+.msg.user { background: #FF6B00; color: #fff; border-bottom-right-radius: 4px; align-self: flex-end; }
+.msg.loading { background: #fff; color: #888; font-style: italic; }
+#input-area { display: flex; padding: 12px; background: #fff; border-top: 1px solid #e0e0e0; gap: 8px; }
+#user-input { flex: 1; border: 1px solid #ddd; border-radius: 24px; padding: 10px 16px; font-size: 14px; outline: none; }
+#user-input:focus { border-color: #FF6B00; }
+#send-btn { background: #FF6B00; color: #fff; border: none; border-radius: 50%; width: 42px; height: 42px; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+#send-btn:hover { background: #e55d00; }
+</style>
+</head>
+<body>
+<div id="header">
+  <div style="width:36px;height:36px;border-radius:50%;background:#FF6B00;display:flex;align-items:center;justify-content:center;font-size:18px;">♿</div>
+  <div class="info"><h3>Ace</h3><p>Assistente da Mais Acessível</p></div>
+</div>
+<div id="messages">
+  <div class="msg bot">Olá! 👋 Sou o <strong>Ace</strong>, assistente virtual da <strong>Mais Acessível</strong>. Posso ajudar com barras de apoio, piso tátil, placas Braille e muito mais!<br><br>Qual é o seu nome?</div>
+</div>
+<div id="input-area">
+  <input id="user-input" type="text" placeholder="Digite sua mensagem..." />
+  <button id="send-btn">➤</button>
+</div>
+<script>
+const msgs = document.getElementById('messages');
+const input = document.getElementById('user-input');
+const btn = document.getElementById('send-btn');
+let history = [];
 
+function addMsg(text, role) {
+  const d = document.createElement('div');
+  d.className = 'msg ' + (role === 'user' ? 'user' : role === 'loading' ? 'loading' : 'bot');
+  d.innerHTML = text.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  msgs.appendChild(d);
+  msgs.scrollTop = msgs.scrollHeight;
+  return d;
+}
+
+async function send() {
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  addMsg(text, 'user');
+  history.push({ role: 'user', content: text });
+  const loading = addMsg('Ace está digitando...', 'loading');
   try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "anthropic-beta": "mcp-client-2025-04-04"
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 1024,
-        system: SYSTEM_PROMPT,
-        messages,
-        mcp_servers: [
-          {
-            type: "url",
-            url: "https://mcp.bling.com.br/mcp",
-            name: "bling",
-            authorization_token: BLING_MCP_TOKEN
-          }
-        ]
-      })
+    const res = await fetch('/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: history })
     });
-
-    const data = await response.json();
-    if (!response.ok) {
-      return res.status(response.status).json({ error: data });
-    }
-
-    // Extrai texto e ID de contato Bling se criado
-    let blingContactId = null;
-    const textBlocks = (data.content || [])
-      .filter(b => b.type === "text")
-      .map(b => b.text)
-      .join("\n");
-
-    for (const block of (data.content || [])) {
-      if (block.type === "mcp_tool_result") {
-        try {
-          const parsed = JSON.parse(block.content?.[0]?.text || "");
-          if (parsed?.data?.id) { blingContactId = parsed.data.id; break; }
-        } catch {}
-      }
-    }
-
-    const toolsUsed = (data.content || []).filter(b => b.type === "mcp_tool_use").map(b => b.name);
-    return res.json({ reply: textBlocks, blingContactId, toolsUsed, stop_reason: data.stop_reason });
-  } catch (err) {
-    return res.status(500).json({ error: "Erro interno do servidor." });
+    const data = await res.json();
+    loading.remove();
+    const reply = data.reply || 'Desculpe, tente novamente.';
+    addMsg(reply, 'bot');
+    history.push({ role: 'assistant', content: reply });
+  } catch(e) {
+    loading.remove();
+    addMsg('Erro de conexão. Tente novamente.', 'bot');
   }
+}
+
+btn.onclick = send;
+input.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
+</script>
+</body>
+</html>`;
+
+app.get("/", (_req, res) => res.setHeader('Content-Type','text/html').status(200).send(CHAT_HTML));
+
+app.post("/chat", async (req, res) => {
+const { messages } = req.body;
+if (!messages || !Array.isArray(messages)) {
+return res.status(400).json({ error: "messages inválido" });
+}
+try {
+const response = await fetch("https://api.anthropic.com/v1/messages", {
+method: "POST",
+headers: {
+"Content-Type": "application/json",
+"x-api-key": ANTHROPIC_API_KEY,
+"anthropic-version": "2023-06-01",
+"anthropic-beta": "mcp-client-2025-04-04"
+},
+body: JSON.stringify({
+model: "claude-sonnet-4-6",
+max_tokens: 1024,
+system: SYSTEM_PROMPT,
+messages,
+mcp_servers: [
+{
+type: "url",
+url: "https://mcp.bling.com.br/mcp",
+name: "bling",
+authorization_token: BLING_MCP_TOKEN
+}
+]
+})
+});
+const data = await response.json();
+if (!response.ok) return res.status(response.status).json({ error: data });
+let blingContactId = null;
+const textBlocks = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
+for (const block of (data.content || [])) {
+if (block.type === "mcp_tool_result") {
+try { const p = JSON.parse(block.content?.[0]?.text || ""); if (p?.data?.id) { blingContactId = p.data.id; break; } } catch {}
+}
+}
+const toolsUsed = (data.content || []).filter(b => b.type === "mcp_tool_use").map(b => b.name);
+return res.json({ reply: textBlocks, blingContactId, toolsUsed, stop_reason: data.stop_reason });
+} catch (err) {
+return res.status(500).json({ error: "Erro interno do servidor." });
+}
 });
 
 app.get("/ping", (_req, res) => res.json({ status: "ok", ts: Date.now() }));
