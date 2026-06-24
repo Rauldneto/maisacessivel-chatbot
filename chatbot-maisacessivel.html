@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ace - Atendimento Mais Acessível</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+  .chat-container { width: 420px; max-width: 100vw; height: 700px; max-height: 100vh; background: #fff; border-radius: 20px; box-shadow: 0 8px 40px rgba(0,0,0,.15); display: flex; flex-direction: column; overflow: hidden; }
+  .chat-header { background: linear-gradient(135deg, #1A56DB, #0E9F9F); color: #fff; padding: 18px 20px; display: flex; align-items: center; gap: 12px; }
+  .chat-header .avatar { width: 44px; height: 44px; border-radius: 50%; background: rgba(255,255,255,.2); display: flex; align-items: center; justify-content: center; font-size: 22px; }
+  .chat-header .info h2 { font-size: 16px; font-weight: 600; }
+  .chat-header .info p { font-size: 12px; opacity: .8; }
+  .chat-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .msg { max-width: 82%; padding: 10px 14px; border-radius: 16px; font-size: 14px; line-height: 1.5; }
+  .msg.bot { background: #f0f4f8; color: #1a202c; border-bottom-left-radius: 4px; align-self: flex-start; }
+  .msg.user { background: linear-gradient(135deg, #1A56DB, #0E9F9F); color: #fff; border-bottom-right-radius: 4px; align-self: flex-end; }
+  .typing { display: flex; gap: 5px; padding: 10px 14px; }
+  .typing span { width: 8px; height: 8px; background: #999; border-radius: 50%; animation: bounce .8s infinite; }
+  .typing span:nth-child(2) { animation-delay: .15s; }
+  .typing span:nth-child(3) { animation-delay: .3s; }
+  @keyframes bounce { 0%,60%,100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }
+  .chat-input { padding: 14px 16px; border-top: 1px solid #e2e8f0; display: flex; gap: 10px; }
+  .chat-input input { flex: 1; padding: 10px 14px; border: 1.5px solid #e2e8f0; border-radius: 24px; font-size: 14px; outline: none; transition: border-color .2s; }
+  .chat-input input:focus { border-color: #1A56DB; }
+  .chat-input button { width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(135deg, #1A56DB, #0E9F9F); border: none; cursor: pointer; color: #fff; font-size: 18px; display: flex; align-items: center; justify-content: center; transition: opacity .2s; }
+  .chat-input button:hover { opacity: .85; }
+  .chat-input button:disabled { opacity: .5; cursor: not-allowed; }
+  .powered { text-align: center; font-size: 11px; color: #a0aec0; padding: 6px; }
+</style>
+</head>
+<body>
+<div class="chat-container">
+  <div class="chat-header">
+    <div class="avatar">♿</div>
+    <div class="info">
+      <h2>Ace — Mais Acessível</h2>
+      <p>Atendimento inteligente • Online</p>
+    </div>
+  </div>
+  <div class="chat-messages" id="messages"></div>
+  <div class="chat-input">
+    <input type="text" id="userInput" placeholder="Digite sua mensagem..." autocomplete="off">
+    <button id="sendBtn" onclick="sendMessage()">➤</button>
+  </div>
+  <div class="powered">Powered by Claude AI</div>
+</div>
+
+<script>
+const BACKEND_URL = "https://maisacessivel-chatbot.onrender.com";
+const messages = [];
+
+function addMessage(text, role) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.textContent = text;
+  document.getElementById('messages').appendChild(div);
+  document.getElementById('messages').scrollTop = 9999;
+}
+
+function showTyping() {
+  const div = document.createElement('div');
+  div.className = 'msg bot typing';
+  div.id = 'typing';
+  div.innerHTML = '<span></span><span></span><span></span>';
+  document.getElementById('messages').appendChild(div);
+  document.getElementById('messages').scrollTop = 9999;
+}
+
+function hideTyping() {
+  const t = document.getElementById('typing');
+  if (t) t.remove();
+}
+
+async function sendMessage() {
+  const input = document.getElementById('userInput');
+  const text = input.value.trim();
+  if (!text) return;
+
+  input.value = '';
+  document.getElementById('sendBtn').disabled = true;
+  addMessage(text, 'user');
+  messages.push({ role: 'user', content: text });
+  showTyping();
+
+  try {
+    const res = await fetch(BACKEND_URL + '/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages })
+    });
+    const data = await res.json();
+    hideTyping();
+    const reply = data.reply || 'Desculpe, ocorreu um erro. Tente novamente.';
+    addMessage(reply, 'bot');
+    messages.push({ role: 'assistant', content: reply });
+  } catch (e) {
+    hideTyping();
+    addMessage('Erro de conexão. Verifique e tente novamente.', 'bot');
+  }
+  document.getElementById('sendBtn').disabled = false;
+  input.focus();
+}
+
+document.getElementById('userInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') sendMessage();
+});
+
+// Mensagem inicial
+window.onload = () => {
+  setTimeout(() => {
+    const welcome = 'Olá! 😊 Sou o Ace, assistente virtual da Mais Acessível. Posso te ajudar com informações sobre nossos produtos de acessibilidade — barras de apoio, piso tátil, placas Braille e muito mais. Como posso te ajudar hoje?';
+    addMessage(welcome, 'bot');
+    messages.push({ role: 'assistant', content: welcome });
+  }, 500);
+};
+</script>
+</body>
+</html>
