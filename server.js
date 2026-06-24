@@ -5,10 +5,48 @@ import fetch from "node-fetch";
 const app = express();
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const BLING_MCP_TOKEN = process.env.BLING_MCP_TOKEN;
+const BLING_CLIENT_ID = '9b8d0f84647fc866c3aeff20d44d56453a6f5365';
+const BLING_CLIENT_SECRET = 'f56cb491d377cd30e57f0a8b775ba399e54371fb9639795f2bc1bf1ace62';
+const BLING_REDIRECT_URI = 'https://maisacessivel-chatbot.onrender.com/callback';
+
+let BLING_MCP_TOKEN = process.env.BLING_MCP_TOKEN || '';
+let BLING_REFRESH_TOKEN = '';
 
 app.use(cors());
 app.use(express.json());
+
+// Rota de callback OAuth - troca code por token automaticamente
+app.get('/callback', async (req, res) => {
+  const code = req.query.code;
+  if (!code) return res.send('Erro: code nao encontrado');
+  try {
+    const credentials = Buffer.from(BLING_CLIENT_ID + ':' + BLING_CLIENT_SECRET).toString('base64');
+    const response = await fetch('https://www.bling.com.br/Api/v3/oauth/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': 'Basic ' + credentials
+      },
+      body: 'grant_type=authorization_code&code=' + code + '&redirect_uri=' + encodeURIComponent(BLING_REDIRECT_URI)
+    });
+    const data = await response.json();
+    if (data.access_token) {
+      BLING_MCP_TOKEN = data.access_token;
+      BLING_REFRESH_TOKEN = data.refresh_token || '';
+      return res.send('<h2 style="font-family:sans-serif;color:green;text-align:center;margin-top:40px">✅ Token do Bling renovado com sucesso!<br><br>Pode fechar esta aba e testar o chatbot.</h2>');
+    } else {
+      return res.send('<h2 style="font-family:sans-serif;color:red;text-align:center;margin-top:40px">❌ Erro: ' + JSON.stringify(data) + '</h2>');
+    }
+  } catch(err) {
+    return res.send('Erro interno: ' + err.message);
+  }
+});
+
+// Rota para renovar token manualmente
+app.get('/renovar-token', (_req, res) => {
+  const url = 'https://www.bling.com.br/Api/v3/oauth/authorize?response_type=code&client_id=' + BLING_CLIENT_ID + '&state=chatbotace';
+  res.redirect(url);
+});
 
 const SYSTEM_PROMPT = `Você é o Ace, assistente virtual da Mais Acessível (maisacessivel.com.br), distribuidora de produtos de acessibilidade há 6 anos em Goiânia-GO.
 
@@ -47,7 +85,6 @@ body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; display: flex; 
 #user-input { flex: 1; border: 1px solid #ddd; border-radius: 24px; padding: 10px 16px; font-size: 14px; outline: none; }
 #user-input:focus { border-color: #FF6B00; }
 #send-btn { background: #FF6B00; color: #fff; border: none; border-radius: 50%; width: 42px; height: 42px; font-size: 18px; cursor: pointer; }
-#send-btn:hover { background: #e55d00; }
 </style>
 </head>
 <body>
@@ -67,7 +104,6 @@ body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; display: flex; 
 var msgs = document.getElementById('messages');
 var input = document.getElementById('user-input');
 var history = [];
-
 function addMsg(text, role) {
   var d = document.createElement('div');
   d.className = 'msg ' + (role === 'user' ? 'user' : role === 'loading' ? 'loading' : 'bot');
@@ -76,7 +112,6 @@ function addMsg(text, role) {
   msgs.scrollTop = msgs.scrollHeight;
   return d;
 }
-
 async function send() {
   var text = input.value.trim();
   if (!text) return;
@@ -85,11 +120,7 @@ async function send() {
   history.push({ role: 'user', content: text });
   var loading = addMsg('Ace está digitando...', 'loading');
   try {
-    var res = await fetch('/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: history })
-    });
+    var res = await fetch('/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: history }) });
     var data = await res.json();
     loading.remove();
     var reply = data.reply || 'Desculpe, tente novamente.';
@@ -100,53 +131,33 @@ async function send() {
     addMsg('Erro de conexão. Tente novamente.', 'bot');
   }
 }
-
 document.getElementById('send-btn').addEventListener('click', send);
-document.getElementById('user-input').addEventListener('keydown', function(e) {
-  if (e.key === 'Enter') send();
-});
+document.getElementById('user-input').addEventListener('keydown', function(e) { if (e.key === 'Enter') send(); });
 </script>
 </body>
 </html>`;
 
-app.get("/", (_req, res) => res.setHeader('Content-Type','text/html').status(200).send(CHAT_HTML));
+app.get('/', (_req, res) => res.setHeader('Content-Type','text/html').status(200).send(CHAT_HTML));
 
-app.post("/chat", async (req, res) => {
-const { messages } = req.body;
-if (!messages || !Array.isArray(messages)) return res.status(400).json({ error: "messages inválido" });
-try {
-const response = await fetch("https://api.anthropic.com/v1/messages", {
-method: "POST",
-headers: {
-"Content-Type": "application/json",
-"x-api-key": ANTHROPIC_API_KEY,
-"anthropic-version": "2023-06-01",
-"anthropic-beta": "mcp-client-2025-04-04"
-},
-body: JSON.stringify({
-model: "claude-sonnet-4-6",
-max_tokens: 1024,
-system: SYSTEM_PROMPT,
-messages,
-mcp_servers: [{ type: "url", url: "https://mcp.bling.com.br/mcp", name: "bling", authorization_token: BLING_MCP_TOKEN }]
-})
-});
-const data = await response.json();
-if (!response.ok) return res.status(response.status).json({ error: data });
-var textBlocks = (data.content || []).filter(function(b){ return b.type === "text"; }).map(function(b){ return b.text; }).join("\n");
-var blingContactId = null;
-for (var i = 0; i < (data.content || []).length; i++) {
-  var block = data.content[i];
-  if (block.type === "mcp_tool_result") {
-    try { var p = JSON.parse(block.content?.[0]?.text || ""); if (p?.data?.id) { blingContactId = p.data.id; break; } } catch(e) {}
-  }
-}
-var toolsUsed = (data.content || []).filter(function(b){ return b.type === "mcp_tool_use"; }).map(function(b){ return b.name; });
-return res.json({ reply: textBlocks, blingContactId: blingContactId, toolsUsed: toolsUsed, stop_reason: data.stop_reason });
-} catch (err) {
-return res.status(500).json({ error: "Erro interno do servidor." });
-}
+app.post('/chat', async (req, res) => {
+  const { messages } = req.body;
+  if (!messages || !Array.isArray(messages)) return res.status(400).json({ error: 'messages inválido' });
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'anthropic-beta': 'mcp-client-2025-04-04' },
+      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1024, system: SYSTEM_PROMPT, messages, mcp_servers: [{ type: 'url', url: 'https://mcp.bling.com.br/mcp', name: 'bling', authorization_token: BLING_MCP_TOKEN }] })
+    });
+    const data = await response.json();
+    if (!response.ok) return res.status(response.status).json({ error: data });
+    var textBlocks = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+    var blingContactId = null;
+    for (var block of (data.content || [])) {
+      if (block.type === 'mcp_tool_result') { try { var p = JSON.parse(block.content?.[0]?.text || ''); if (p?.data?.id) { blingContactId = p.data.id; break; } } catch(e) {} }
+    }
+    return res.json({ reply: textBlocks, blingContactId, toolsUsed: (data.content||[]).filter(b=>b.type==='mcp_tool_use').map(b=>b.name), stop_reason: data.stop_reason });
+  } catch (err) { return res.status(500).json({ error: 'Erro interno.' }); }
 });
 
-app.get("/ping", (_req, res) => res.json({ status: "ok", ts: Date.now() }));
-app.listen(PORT, () => console.log(`✅ Ace backend rodando na porta ${PORT}`));
+app.get('/ping', (_req, res) => res.json({ status: 'ok', ts: Date.now() }));
+app.listen(PORT, () => console.log('✅ Ace rodando na porta ' + PORT));
