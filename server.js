@@ -35,9 +35,9 @@ const CHAT_HTML = `<!DOCTYPE html>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; display: flex; flex-direction: column; height: 100vh; }
 #header { background: #1a2f5a; color: #fff; padding: 12px 16px; display: flex; align-items: center; gap: 10px; }
-#header img { width: 36px; height: 36px; border-radius: 50%; }
 #header .info h3 { font-size: 15px; font-weight: 600; }
 #header .info p { font-size: 11px; color: #a0b4cc; }
+#test-banner { background: #fff3cd; color: #856404; text-align: center; padding: 6px 12px; font-size: 12px; font-weight: 600; border-bottom: 1px solid #ffc107; }
 #messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
 .msg { max-width: 82%; padding: 10px 14px; border-radius: 16px; font-size: 14px; line-height: 1.5; }
 .msg.bot { background: #fff; color: #222; border-bottom-left-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); align-self: flex-start; }
@@ -48,21 +48,58 @@ body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; display: flex; 
 #user-input:focus { border-color: #FF6B00; }
 #send-btn { background: #FF6B00; color: #fff; border: none; border-radius: 50%; width: 42px; height: 42px; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 #send-btn:hover { background: #e55d00; }
+#lock-screen { position: fixed; inset: 0; background: #1a2f5a; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; gap: 16px; padding: 32px; }
+#lock-screen .logo { font-size: 48px; }
+#lock-screen h2 { color: #fff; font-size: 18px; text-align: center; }
+#lock-screen p { color: #a0b4cc; font-size: 13px; text-align: center; }
+#lock-screen .badge { background: #ffc107; color: #333; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 12px; }
+#lock-screen input { width: 100%; max-width: 280px; padding: 12px 16px; border-radius: 24px; border: 2px solid #2d4a7a; background: #243660; color: #fff; font-size: 15px; outline: none; text-align: center; }
+#lock-screen input:focus { border-color: #FF6B00; }
+#lock-screen button { background: #FF6B00; color: #fff; border: none; border-radius: 24px; padding: 12px 32px; font-size: 15px; font-weight: 600; cursor: pointer; width: 100%; max-width: 280px; }
+#lock-screen button:hover { background: #e55d00; }
+#lock-screen .error { color: #ff6b6b; font-size: 13px; display: none; }
 </style>
 </head>
 <body>
-<div id="header">
+
+<div id="lock-screen">
+  <div class="logo">♿</div>
+  <span class="badge">🔧 EM TESTE</span>
+  <h2>Ace — Assistente da Mais Acessível</h2>
+  <p>Este chatbot está em fase de testes.<br>Digite a senha para continuar.</p>
+  <input id="pwd-input" type="password" placeholder="Digite a senha..." />
+  <div class="error" id="pwd-error">❌ Senha incorreta. Tente novamente.</div>
+  <button onclick="checkPwd()">Entrar</button>
+</div>
+
+<div id="header" style="display:none">
   <div style="width:36px;height:36px;border-radius:50%;background:#FF6B00;display:flex;align-items:center;justify-content:center;font-size:18px;">♿</div>
   <div class="info"><h3>Ace</h3><p>Assistente da Mais Acessível</p></div>
 </div>
-<div id="messages">
+<div id="test-banner" style="display:none">🔧 Versão em teste — seu feedback é bem-vindo!</div>
+<div id="messages" style="display:none">
   <div class="msg bot">Olá! 👋 Sou o <strong>Ace</strong>, assistente virtual da <strong>Mais Acessível</strong>. Posso ajudar com barras de apoio, piso tátil, placas Braille e muito mais!<br><br>Qual é o seu nome?</div>
 </div>
-<div id="input-area">
+<div id="input-area" style="display:none">
   <input id="user-input" type="text" placeholder="Digite sua mensagem..." />
   <button id="send-btn">➤</button>
 </div>
+
 <script>
+function checkPwd() {
+  const val = document.getElementById('pwd-input').value;
+  if (val === 'Tendfer@2019') {
+    document.getElementById('lock-screen').style.display = 'none';
+    document.getElementById('header').style.display = 'flex';
+    document.getElementById('test-banner').style.display = 'block';
+    document.getElementById('messages').style.display = 'flex';
+    document.getElementById('input-area').style.display = 'flex';
+  } else {
+    document.getElementById('pwd-error').style.display = 'block';
+  }
+}
+document.addEventListener('keydown', e => { if (e.key === 'Enter') checkPwd(); });
+
 const msgs = document.getElementById('messages');
 const input = document.getElementById('user-input');
 const btn = document.getElementById('send-btn');
