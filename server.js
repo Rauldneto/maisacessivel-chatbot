@@ -63,22 +63,82 @@ app.get('/callback', async (req, res) => {
   } catch(e) { return res.send('Erro: ' + e.message); }
 });
 
-const SYSTEM_PROMPT = `Você é o Ace, assistente virtual da Mais Acessível (maisacessivel.com.br), distribuidora de produtos de acessibilidade há 6 anos em Goiânia-GO. WhatsApp: (62) 3517-3971.
+function buildSystemPrompt() {
+  const tom = aceConfig.tom === 'formal' ? 'formal e profissional' : aceConfig.tom === 'tecnico' ? 'técnico e detalhado' : 'amigável e descontraído';
+  let prompt = `Você é o Ace, assistente virtual da Mais Acessível (maisacessivel.com.br), distribuidora de produtos de acessibilidade há 6 anos em Goiânia-GO.
+WhatsApp: ${aceConfig.whatsapp || '(62) 3517-3971'}.
+Site: ${aceConfig.site || 'maisacessivel.com.br'}.
+Endereço: ${aceConfig.endereco || 'Goiânia, GO'}.
 
 PRODUTOS: barras de apoio, piso tátil, placas Braille, alarmes PCD, sanitários adaptados.
 
-FLUXO:
+TOM DE VOZ: ${tom}.
+
+FLUXO DE ATENDIMENTO:
 1. Pergunte o nome do cliente
 2. Pergunte o WhatsApp ou email
 3. Pergunte qual produto tem interesse
 4. Cadastre o contato no Bling se o token estiver disponível
 5. Consulte estoque no Bling se perguntado
-6. Informe que a equipe entrará em contato
+6. Informe que a equipe entrará em contato pelo WhatsApp ${aceConfig.whatsapp || '(62) 3517-3971'}
 
 REGRAS:
 - Responda SEMPRE em português brasileiro
-- Seja simpático e profissional
-- Não invente preços — diga que a equipe confirmará`;
+- Não invente preços ou prazos — diga que a equipe confirmará`;
+
+  if (aceConfig.instrucoes) {
+    prompt += `\n\nINSTRUÇÕES ADICIONAIS:\n${aceConfig.instrucoes}`;
+  }
+  if (aceConfig.proibidas && aceConfig.proibidas.length > 0) {
+    prompt += `\n\nPALAVRAS PROIBIDAS — nunca use: ${aceConfig.proibidas.join(', ')}`;
+  }
+  if (aceConfig.respostas && aceConfig.respostas.length > 0) {
+    const rr = aceConfig.respostas.filter(r => r.pergunta && r.resposta)
+      .map(r => `- "${r.pergunta}" → "${r.resposta}"`).join('\n');
+    if (rr) prompt += `\n\nRESPOSTAS RÁPIDAS OBRIGATÓRIAS:\n${rr}`;
+  }
+  if (aceConfig.horarioIni && aceConfig.horarioFim) {
+    const now = new Date();
+    const hora = now.getHours() * 60 + now.getMinutes();
+    const [hIni, mIni] = aceConfig.horarioIni.split(':').map(Number);
+    const [hFim, mFim] = aceConfig.horarioFim.split(':').map(Number);
+    const ini = hIni * 60 + mIni;
+    const fim = hFim * 60 + mFim;
+    if (hora < ini || hora > fim) {
+      prompt += `\n\nATENÇÃO: Fora do horário de atendimento. Informe ao cliente: "${aceConfig.msgForaHorario}"`;
+    }
+  }
+  return prompt;
+}
+
+
+// ── CONFIG DO ACE ──
+let aceConfig = {
+  instrucoes: '',
+  tom: 'amigavel',
+  whatsapp: '556235173971',
+  horarioIni: '08:00',
+  horarioFim: '18:00',
+  msgBoasVindas: 'Olá! 👋 Sou o Ace, assistente da Mais Acessível. Posso ajudar com barras de apoio, piso tátil, Braille e muito mais!\n\nQual é o seu nome?',
+  msgForaHorario: 'Olá! Nosso horário de atendimento é seg-sex 8h às 18h. Deixe seu nome e WhatsApp que retornaremos em breve!',
+  proibidas: [],
+  respostas: [],
+  capturaLeads: true
+};
+
+let aceLeads = [];
+
+app.get('/config', (_, res) => res.json(aceConfig));
+app.post('/config', (req, res) => {
+  aceConfig = Object.assign(aceConfig, req.body);
+  res.json({ ok: true });
+});
+app.get('/leads', (_, res) => res.json(aceLeads));
+app.post('/leads', (req, res) => {
+  aceLeads.unshift(req.body);
+  if (aceLeads.length > 500) aceLeads = aceLeads.slice(0, 500);
+  res.json({ ok: true });
+});
 
 app.get('/chat.js', (_, res) => {
   res.setHeader('Content-Type', 'application/javascript');
@@ -150,7 +210,7 @@ app.post('/chat', async (req, res) => {
     const body = {
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 1024,
-      system: SYSTEM_PROMPT,
+      system: buildSystemPrompt(),
       messages
     };
     if (withBling) {
@@ -198,6 +258,19 @@ app.post('/chat', async (req, res) => {
     if (!resp.ok) return res.status(resp.status).json({ error: data });
     const txt = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
     const toolsUsed = (data.content || []).filter(b => b.type === 'mcp_tool_use').map(b => b.name);
+    // Captura de lead automatica
+    if (aceConfig.capturaLeads && messages.length >= 3) {
+      const conv = messages.map(m => m.content).join(' ');
+      const wppMatch = conv.match(/\b(?:55)?\s*\(?\d{2}\)?[\s\-]?9?\d{4}[\s\-]?\d{4}\b/);
+      const nomeMsg = messages.find(m => m.role === 'user');
+      if (wppMatch && nomeMsg) {
+        const jaExiste = aceLeads.some(l => l.whatsapp === wppMatch[0]);
+        if (!jaExiste) {
+          aceLeads.unshift({ nome: nomeMsg.content.substring(0,40), whatsapp: wppMatch[0], interesse: 'chat', data: new Date().toLocaleString('pt-BR') });
+          if (aceLeads.length > 500) aceLeads = aceLeads.slice(0, 500);
+        }
+      }
+    }
     return res.json({ reply: txt, toolsUsed, blingUsed: useBling });
   } catch(e) {
     return res.status(500).json({ error: 'Erro interno: ' + e.message });
