@@ -10,15 +10,35 @@ const BLING_CLIENT_ID = '9b8d0f84647fc866c3aeff20d44d56453a6f5365';
 const BLING_CLIENT_SECRET = 'f56cb491d377cd30e57f0a8b775ba399e54371fb9639795f2bc1bf1ace62';
 const BLING_REDIRECT_URI = 'https://maisacessivel-chatbot.onrender.com/callback';
 const TOKEN_FILE = '/tmp/bling_token.json';
+const FIREBASE_URL = 'https://maisacessivel-1d0ad-default-rtdb.firebaseio.com';
 
 app.use(cors({
-  origin: ['https://rauldneto.github.io', 'https://maisacessivel.com.br', 'http://localhost:3000'],
-  methods: ['GET','POST'],
+  origin: '*',
+  methods: ['GET','POST','PUT','OPTIONS'],
   allowedHeaders: ['Content-Type']
 }));
 app.options('*', cors());
 app.use(express.json());
 
+// ── FIREBASE HELPERS ──
+async function fbGet(path) {
+  try {
+    const r = await fetch(`${FIREBASE_URL}/${path}.json`);
+    return await r.json();
+  } catch(e) { return null; }
+}
+async function fbSet(path, data) {
+  try {
+    await fetch(`${FIREBASE_URL}/${path}.json`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return true;
+  } catch(e) { return false; }
+}
+
+// ── BLING TOKEN ──
 function saveToken(access, refresh) {
   try { fs.writeFileSync(TOKEN_FILE, JSON.stringify({ access_token: access, refresh_token: refresh, ts: Date.now() })); } catch(e) {}
 }
@@ -45,10 +65,10 @@ async function refreshBlingToken() {
   } catch(e) { return false; }
 }
 
+// ── OAUTH BLING ──
 app.get('/renovar-token', (_, res) => {
   res.redirect('https://www.bling.com.br/Api/v3/oauth/authorize?response_type=code&client_id=' + BLING_CLIENT_ID + '&state=chatbotace');
 });
-
 app.get('/callback', async (req, res) => {
   const code = req.query.code;
   if (!code) return res.send('Erro: code não encontrado');
@@ -68,95 +88,97 @@ app.get('/callback', async (req, res) => {
   } catch(e) { return res.send('Erro: ' + e.message); }
 });
 
-function buildSystemPrompt() {
-  const tom = aceConfig.tom === 'formal' ? 'formal e profissional' : aceConfig.tom === 'tecnico' ? 'técnico e detalhado' : 'amigável e descontraído';
-  let prompt = `Você é o Ace, assistente virtual da Mais Acessível (maisacessivel.com.br), distribuidora de produtos de acessibilidade há 6 anos em Goiânia-GO.
-WhatsApp: ${aceConfig.whatsapp || '(62) 3517-3971'}.
-Site: ${aceConfig.site || 'maisacessivel.com.br'}.
-Endereço: ${aceConfig.endereco || 'Goiânia, GO'}.
-
-PRODUTOS: barras de apoio, piso tátil, placas Braille, alarmes PCD, sanitários adaptados.
-
-TOM DE VOZ: ${tom}.
-
-FLUXO DE ATENDIMENTO:
-1. Pergunte o nome do cliente
-2. Pergunte o WhatsApp ou email
-3. Pergunte qual produto tem interesse
-4. Cadastre o contato no Bling se o token estiver disponível
-5. Consulte estoque no Bling se perguntado
-6. Informe que a equipe entrará em contato pelo WhatsApp ${aceConfig.whatsapp || '(62) 3517-3971'}
-
-REGRAS:
-- Responda SEMPRE em português brasileiro
-- Não invente preços ou prazos — diga que a equipe confirmará`;
-
-  if (aceConfig.instrucoes) {
-    prompt += `\n\nINSTRUÇÕES ADICIONAIS:\n${aceConfig.instrucoes}`;
-  }
-  if (aceConfig.proibidas && aceConfig.proibidas.length > 0) {
-    prompt += `\n\nPALAVRAS PROIBIDAS — nunca use: ${aceConfig.proibidas.join(', ')}`;
-  }
-  if (aceConfig.respostas && aceConfig.respostas.length > 0) {
-    const rr = aceConfig.respostas.filter(r => r.pergunta && r.resposta)
-      .map(r => `- "${r.pergunta}" → "${r.resposta}"`).join('\n');
-    if (rr) prompt += `\n\nRESPOSTAS RÁPIDAS OBRIGATÓRIAS:\n${rr}`;
-  }
-  if (aceConfig.horarioIni && aceConfig.horarioFim) {
-    const now = new Date();
-    const hora = now.getHours() * 60 + now.getMinutes();
-    const [hIni, mIni] = aceConfig.horarioIni.split(':').map(Number);
-    const [hFim, mFim] = aceConfig.horarioFim.split(':').map(Number);
-    const ini = hIni * 60 + mIni;
-    const fim = hFim * 60 + mFim;
-    if (hora < ini || hora > fim) {
-      prompt += `\n\nATENÇÃO: Fora do horário de atendimento. Informe ao cliente: "${aceConfig.msgForaHorario}"`;
-    }
-  }
-  return prompt;
-}
-
-
-// ── CONFIG DO ACE ──
-let aceConfig = {
+// ── CONFIG E LEADS (Firebase) ──
+const DEFAULT_CONFIG = {
   instrucoes: '',
   tom: 'amigavel',
   whatsapp: '556235173971',
+  site: 'maisacessivel.com.br',
+  endereco: 'Goiânia, GO',
   horarioIni: '08:00',
   horarioFim: '18:00',
   msgBoasVindas: 'Olá! 👋 Sou o Ace, assistente da Mais Acessível. Posso ajudar com barras de apoio, piso tátil, Braille e muito mais!\n\nQual é o seu nome?',
-  msgForaHorario: 'Olá! Nosso horário de atendimento é seg-sex 8h às 18h. Deixe seu nome e WhatsApp que retornaremos em breve!',
+  msgForaHorario: 'Olá! Nosso horário é seg-sex 8h às 18h. Deixe nome e WhatsApp que retornamos em breve!',
   proibidas: [],
   respostas: [],
   capturaLeads: true
 };
 
-let aceLeads = [];
-
-app.get('/config', (_, res) => res.json(aceConfig));
-app.post('/config', (req, res) => {
-  aceConfig = Object.assign(aceConfig, req.body);
+app.get('/config', async (_, res) => {
+  const cfg = await fbGet('ace_config') || DEFAULT_CONFIG;
+  res.json(cfg);
+});
+app.post('/config', async (req, res) => {
+  const atual = await fbGet('ace_config') || DEFAULT_CONFIG;
+  const novo = Object.assign({}, atual, req.body);
+  await fbSet('ace_config', novo);
   res.json({ ok: true });
 });
-app.get('/leads', (_, res) => res.json(aceLeads));
-app.post('/leads', (req, res) => {
-  aceLeads.unshift(req.body);
-  if (aceLeads.length > 500) aceLeads = aceLeads.slice(0, 500);
-  res.json({ ok: true });
+app.get('/leads', async (_, res) => {
+  const leads = await fbGet('ace_leads') || [];
+  res.json(Array.isArray(leads) ? leads : Object.values(leads));
 });
 
+// ── SYSTEM PROMPT DINAMICO ──
+async function buildSystemPrompt() {
+  const cfg = await fbGet('ace_config') || DEFAULT_CONFIG;
+  const tom = cfg.tom === 'formal' ? 'formal e profissional' : cfg.tom === 'tecnico' ? 'técnico e detalhado' : 'amigável e descontraído';
+
+  let prompt = `Você é o Ace, assistente virtual da Mais Acessível (${cfg.site || 'maisacessivel.com.br'}), distribuidora de produtos de acessibilidade há 6 anos em Goiânia-GO.
+WhatsApp: ${cfg.whatsapp || '(62) 3517-3971'}.
+Endereço: ${cfg.endereco || 'Goiânia, GO'}.
+
+PRODUTOS: barras de apoio, piso tátil, placas Braille, alarmes PCD, sanitários adaptados.
+TOM DE VOZ: ${tom}.
+
+FLUXO:
+1. Pergunte o nome do cliente
+2. Pergunte WhatsApp ou email
+3. Pergunte qual produto tem interesse
+4. Tente cadastrar o contato no Bling
+5. Consulte estoque no Bling se perguntado
+6. Informe que a equipe entrará em contato pelo WhatsApp ${cfg.whatsapp || '(62) 3517-3971'}
+
+REGRAS:
+- Responda SEMPRE em português brasileiro
+- Não invente preços ou prazos`;
+
+  if (cfg.instrucoes) prompt += `\n\nINSTRUÇÕES ADICIONAIS:\n${cfg.instrucoes}`;
+  if (cfg.proibidas && cfg.proibidas.length > 0) prompt += `\n\nPALAVRAS PROIBIDAS — nunca use: ${cfg.proibidas.join(', ')}`;
+  if (cfg.respostas && cfg.respostas.length > 0) {
+    const rr = cfg.respostas.filter(r => r.pergunta && r.resposta).map(r => `- "${r.pergunta}" → "${r.resposta}"`).join('\n');
+    if (rr) prompt += `\n\nRESPOSTAS RÁPIDAS — use exatamente estas quando perguntado:\n${rr}`;
+  }
+  if (cfg.horarioIni && cfg.horarioFim) {
+    const now = new Date(new Date().toLocaleString('en-US', {timeZone:'America/Sao_Paulo'}));
+    const hora = now.getHours() * 60 + now.getMinutes();
+    const [hI, mI] = cfg.horarioIni.split(':').map(Number);
+    const [hF, mF] = cfg.horarioFim.split(':').map(Number);
+    if (hora < hI*60+mI || hora > hF*60+mF) {
+      prompt += `\n\nFORA DO HORÁRIO: Informe ao cliente: "${cfg.msgForaHorario}"`;
+    }
+  }
+  return prompt;
+}
+
+// ── CHAT ──
 app.get('/chat.js', (_, res) => {
   res.setHeader('Content-Type', 'application/javascript');
   res.send(`
 var H=[];
-function am(t,c){var d=document.createElement('div');d.className=c;d.innerHTML=t.replace(/\\n/g,'<br>').replace(/\\*\\*(.*?)\\*\\*/g,'<b>$1</b>');var m=document.getElementById('msgs');m.appendChild(d);m.scrollTop=9999;return d;}
+function am(t,c){
+  var d=document.createElement('div');d.className=c;
+  d.innerHTML=t.replace(/\\n/g,'<br>').replace(/\\*\\*(.*?)\\*\\*/g,'<b>$1</b>');
+  var m=document.getElementById('msgs');m.appendChild(d);m.scrollTop=9999;return d;
+}
 function enviar(){
-  var inp=document.getElementById('inp');var t=inp.value.trim();if(!t)return;inp.value='';
+  var inp=document.getElementById('inp');
+  var t=inp.value.trim();if(!t)return;inp.value='';
   am(t,'u');H.push({role:'user',content:t});
   var l=am('Ace está digitando...','l');
   fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:H})})
   .then(function(r){return r.json();})
-  .then(function(d){l.remove();am(d.reply||'Erro, tente novamente.','b');H.push({role:'assistant',content:d.reply||''});})
+  .then(function(d){l.remove();am(d.reply||'Erro, tente novamente.','b');H.push({role:'assistant',content:d.reply||'');})
   .catch(function(){l.remove();am('Erro de conexão.','b');});
 }
 document.getElementById('sb').onclick=enviar;
@@ -207,80 +229,50 @@ app.get('/', (_, res) => res.setHeader('Content-Type','text/html').send(HTML));
 app.post('/chat', async (req, res) => {
   const { messages } = req.body;
   if (!messages) return res.status(400).json({ error: 'invalid' });
-
   const token = getBlingToken();
   const useBling = token && token.length > 20;
+  const systemPrompt = await buildSystemPrompt();
 
   const buildBody = (t, withBling) => {
-    const body = {
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1024,
-      system: buildSystemPrompt(),
-      messages
-    };
-    if (withBling) {
-      body['mcp_servers'] = [{ type: 'url', url: 'https://mcp.bling.com.br/mcp', name: 'bling', authorization_token: t }];
-    }
+    const body = { model: 'claude-haiku-4-5-20251001', max_tokens: 1024, system: systemPrompt, messages };
+    if (withBling) body.mcp_servers = [{ type: 'url', url: 'https://mcp.bling.com.br/mcp', name: 'bling', authorization_token: t }];
     return body;
   };
-
   const callAPI = async (body) => fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-      'anthropic-beta': 'mcp-client-2025-04-04'
-    },
+    headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'anthropic-beta': 'mcp-client-2025-04-04' },
     body: JSON.stringify(body)
   });
 
   try {
-    let resp, data;
-
-    if (useBling) {
-      resp = await callAPI(buildBody(token, true));
+    let resp = await callAPI(buildBody(token, useBling));
+    let data = await resp.json();
+    if (!resp.ok && JSON.stringify(data).includes('Authentication')) {
+      const ok = await refreshBlingToken();
+      resp = await callAPI(buildBody(ok ? getBlingToken() : null, ok));
       data = await resp.json();
-      // Se falhou por token, tenta refresh e depois sem Bling
-      if (!resp.ok && JSON.stringify(data).includes('Authentication')) {
-        const refreshed = await refreshBlingToken();
-        if (refreshed) {
-          resp = await callAPI(buildBody(getBlingToken(), true));
-          data = await resp.json();
-        }
-        // Se ainda falhou, tenta sem Bling
-        if (!resp.ok) {
-          resp = await callAPI(buildBody(null, false));
-          data = await resp.json();
-        }
-      }
-    } else {
-      // Sem token Bling — responde normalmente
-      resp = await callAPI(buildBody(null, false));
-      data = await resp.json();
+      if (!resp.ok) { resp = await callAPI(buildBody(null, false)); data = await resp.json(); }
     }
-
     if (!resp.ok) return res.status(resp.status).json({ error: data });
-    const txt = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
-    const toolsUsed = (data.content || []).filter(b => b.type === 'mcp_tool_use').map(b => b.name);
-    // Captura de lead automatica
-    if (aceConfig.capturaLeads && messages.length >= 3) {
+    const txt = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
+
+    // Captura de lead no Firebase
+    const cfg = await fbGet('ace_config') || DEFAULT_CONFIG;
+    if (cfg.capturaLeads && messages.length >= 3) {
       const conv = messages.map(m => m.content).join(' ');
-      const wppMatch = conv.match(/\b(?:55)?\s*\(?\d{2}\)?[\s\-]?9?\d{4}[\s\-]?\d{4}\b/);
-      const nomeMsg = messages.find(m => m.role === 'user');
-      if (wppMatch && nomeMsg) {
-        const jaExiste = aceLeads.some(l => l.whatsapp === wppMatch[0]);
-        if (!jaExiste) {
-          aceLeads.unshift({ nome: nomeMsg.content.substring(0,40), whatsapp: wppMatch[0], interesse: 'chat', data: new Date().toLocaleString('pt-BR') });
-          if (aceLeads.length > 500) aceLeads = aceLeads.slice(0, 500);
+      const wppMatch = conv.match(/\b(?:55)?\s*\(?\d{2}\)?\s*9?\d{4}[\s\-]?\d{4}\b/);
+      if (wppMatch) {
+        const leads = await fbGet('ace_leads') || [];
+        const arr = Array.isArray(leads) ? leads : Object.values(leads);
+        if (!arr.some(l => l.whatsapp === wppMatch[0])) {
+          arr.unshift({ nome: messages[0].content.substring(0,40), whatsapp: wppMatch[0], interesse: 'chat site', data: new Date().toLocaleString('pt-BR') });
+          await fbSet('ace_leads', arr.slice(0,500));
         }
       }
     }
-    return res.json({ reply: txt, toolsUsed, blingUsed: useBling });
-  } catch(e) {
-    return res.status(500).json({ error: 'Erro interno: ' + e.message });
-  }
+    return res.json({ reply: txt });
+  } catch(e) { return res.status(500).json({ error: 'Erro: ' + e.message }); }
 });
 
-app.get('/ping', (_, res) => res.json({ status: 'ok', ts: Date.now(), blingToken: !!loadToken() }));
+app.get('/ping', (_, res) => res.json({ status: 'ok', ts: Date.now(), firebase: FIREBASE_URL }));
 app.listen(PORT, () => console.log('Ace rodando porta ' + PORT));
