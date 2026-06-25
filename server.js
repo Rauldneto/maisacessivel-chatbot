@@ -11,7 +11,12 @@ const BLING_CLIENT_SECRET = 'f56cb491d377cd30e57f0a8b775ba399e54371fb9639795f2bc
 const BLING_REDIRECT_URI = 'https://maisacessivel-chatbot.onrender.com/callback';
 const TOKEN_FILE = '/tmp/bling_token.json';
 
-app.use(cors());
+app.use(cors({
+  origin: ['https://rauldneto.github.io', 'https://maisacessivel.com.br', 'http://localhost:3000'],
+  methods: ['GET','POST'],
+  allowedHeaders: ['Content-Type']
+}));
+app.options('*', cors());
 app.use(express.json());
 
 function saveToken(access, refresh) {
