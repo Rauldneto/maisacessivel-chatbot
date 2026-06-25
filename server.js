@@ -1,17 +1,90 @@
 import express from 'express';
 import cors from 'cors';
 import fetch from 'node-fetch';
+import fs from 'fs';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const BLING_CLIENT_ID = '9b8d0f84647fc866c3aeff20d44d56453a6f5365';
+const BLING_CLIENT_SECRET = 'f56cb491d377cd30e57f0a8b775ba399e54371fb9639795f2bc1bf1ace62';
+const BLING_REDIRECT_URI = 'https://maisacessivel-chatbot.onrender.com/callback';
+const TOKEN_FILE = '/tmp/bling_token.json';
 
 app.use(cors());
 app.use(express.json());
 
-const SYSTEM_PROMPT = 'Voce eh o Ace, assistente virtual da Mais Acessivel (maisacessivel.com.br), distribuidora de produtos de acessibilidade ha 6 anos em Goiania-GO. PRODUTOS: barras de apoio, piso tatil, placas Braille, alarmes PCD, sanitarios adaptados. Colete nome e contato do cliente. Responda sempre em portugues brasileiro.';
+// ── TOKEN HELPERS ──
+function saveToken(access, refresh) {
+  try { fs.writeFileSync(TOKEN_FILE, JSON.stringify({ access_token: access, refresh_token: refresh, ts: Date.now() })); } catch(e) {}
+}
+function loadToken() {
+  try { return JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf8')); } catch(e) { return null; }
+}
+function getBlingToken() {
+  const d = loadToken();
+  return (d && d.access_token) || process.env.BLING_MCP_TOKEN || '';
+}
+async function refreshBlingToken() {
+  const d = loadToken();
+  if (!d || !d.refresh_token) return false;
+  try {
+    const cr = Buffer.from(BLING_CLIENT_ID + ':' + BLING_CLIENT_SECRET).toString('base64');
+    const r = await fetch('https://www.bling.com.br/Api/v3/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Basic ' + cr },
+      body: 'grant_type=refresh_token&refresh_token=' + d.refresh_token
+    });
+    const j = await r.json();
+    if (j.access_token) { saveToken(j.access_token, j.refresh_token || d.refresh_token); return true; }
+    return false;
+  } catch(e) { return false; }
+}
 
-// Servir o JS do chatbot como arquivo separado
+// ── OAUTH ROUTES ──
+app.get('/renovar-token', (_, res) => {
+  res.redirect('https://www.bling.com.br/Api/v3/oauth/authorize?response_type=code&client_id=' + BLING_CLIENT_ID + '&state=chatbotace');
+});
+
+app.get('/callback', async (req, res) => {
+  const code = req.query.code;
+  if (!code) return res.send('Erro: code não encontrado');
+  try {
+    const cr = Buffer.from(BLING_CLIENT_ID + ':' + BLING_CLIENT_SECRET).toString('base64');
+    const r = await fetch('https://www.bling.com.br/Api/v3/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Basic ' + cr },
+      body: 'grant_type=authorization_code&code=' + code + '&redirect_uri=' + encodeURIComponent(BLING_REDIRECT_URI)
+    });
+    const j = await r.json();
+    if (j.access_token) {
+      saveToken(j.access_token, j.refresh_token || '');
+      return res.send('<h2 style="font-family:sans-serif;color:green;text-align:center;padding:40px">✅ Token do Bling salvo com sucesso!<br><br><a href="https://maisacessivel-chatbot.onrender.com" style="color:#FF6B00">Abrir o Ace →</a></h2>');
+    }
+    return res.send('<pre>Erro: ' + JSON.stringify(j) + '</pre>');
+  } catch(e) { return res.send('Erro: ' + e.message); }
+});
+
+// ── SYSTEM PROMPT ──
+const SYSTEM_PROMPT = `Você é o Ace, assistente virtual da Mais Acessível (maisacessivel.com.br), distribuidora de produtos de acessibilidade há 6 anos em Goiânia-GO. WhatsApp: (62) 3517-3971.
+
+PRODUTOS: barras de apoio, piso tátil, placas Braille, alarmes PCD, sanitários adaptados.
+
+FLUXO DE ATENDIMENTO:
+1. Cumprimente e pergunte o nome do cliente
+2. Pergunte o WhatsApp ou email para contato
+3. Pergunte qual produto ou necessidade tem interesse
+4. Tente cadastrar o contato no Bling usando a ferramenta disponível
+5. Consulte produtos/estoque no Bling se o cliente perguntar sobre disponibilidade
+6. Ao final, informe que a equipe entrará em contato e passe o WhatsApp (62) 3517-3971
+
+REGRAS:
+- Responda SEMPRE em português brasileiro
+- Seja simpático, objetivo e profissional
+- Não invente preços ou prazos — diga que a equipe confirmará
+- Se der erro no Bling, continue o atendimento normalmente`;
+
+// ── HTML DO CHATBOT ──
 app.get('/chat.js', (_, res) => {
   res.setHeader('Content-Type', 'application/javascript');
   res.send(`
@@ -19,7 +92,7 @@ var H=[];
 function am(t,c){
   var d=document.createElement('div');
   d.className=c;
-  d.innerHTML=t.replace(/\\n/g,'<br>');
+  d.innerHTML=t.replace(/\\n/g,'<br>').replace(/\\*\\*(.*?)\\*\\*/g,'<b>$1</b>');
   var m=document.getElementById('msgs');
   m.appendChild(d);
   m.scrollTop=9999;
@@ -32,7 +105,7 @@ function enviar(){
   inp.value='';
   am(t,'u');
   H.push({role:'user',content:t});
-  var l=am('Ace esta digitando...','l');
+  var l=am('Ace está digitando...','l');
   fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:H})})
   .then(function(r){return r.json();})
   .then(function(d){
@@ -42,7 +115,7 @@ function enviar(){
   })
   .catch(function(){
     l.remove();
-    am('Erro de conexao.','b');
+    am('Erro de conexão. Tente novamente.','b');
   });
 }
 document.getElementById('sb').onclick=enviar;
@@ -57,7 +130,7 @@ const HTML = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Ace - Mais Acessivel</title>
+<title>Ace - Mais Acessível</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:Segoe UI,sans-serif;background:#f0f4f8;display:flex;flex-direction:column;height:100vh}
@@ -77,11 +150,11 @@ body{font-family:Segoe UI,sans-serif;background:#f0f4f8;display:flex;flex-direct
 <body>
 <div id="hd">
 <div style="width:36px;height:36px;border-radius:50%;background:#FF6B00;display:flex;align-items:center;justify-content:center;font-size:18px">&#9855;</div>
-<div><h3 style="font-size:15px">Ace</h3><p style="font-size:11px;color:#a0b4cc">Assistente da Mais Acessivel</p></div>
+<div><h3 style="font-size:15px">Ace</h3><p style="font-size:11px;color:#a0b4cc">Assistente da Mais Acessível</p></div>
 </div>
-<div id="bn">&#128295; Versao em teste</div>
+<div id="bn">&#128295; Versão em teste</div>
 <div id="msgs">
-<div class="b">Ola! Sou o <b>Ace</b>, assistente da <b>Mais Acessivel</b>. Posso ajudar com barras de apoio, piso tatil, Braille e mais!<br><br>Qual e o seu nome?</div>
+<div class="b">Olá! 👋 Sou o <b>Ace</b>, assistente da <b>Mais Acessível</b>. Posso ajudar com barras de apoio, piso tátil, Braille e muito mais!<br><br>Qual é o seu nome?</div>
 </div>
 <div id="ia">
 <input id="inp" type="text" placeholder="Digite aqui...">
@@ -91,36 +164,42 @@ body{font-family:Segoe UI,sans-serif;background:#f0f4f8;display:flex;flex-direct
 </body>
 </html>`;
 
-app.get('/', (_, res) => res.setHeader('Content-Type','text/html').send(HTML));
+app.get('/', (_, res) => res.setHeader('Content-Type', 'text/html').send(HTML));
 
+// ── CHAT ENDPOINT ──
 app.post('/chat', async (req, res) => {
   const { messages } = req.body;
   if (!messages) return res.status(400).json({ error: 'invalid' });
+  let token = getBlingToken();
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const callAPI = async (t) => fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
+        'anthropic-version': '2023-06-01',
+        'anthropic-beta': 'mcp-client-2025-04-04'
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 1024,
         system: SYSTEM_PROMPT,
-        messages
+        messages,
+        mcp_servers: [{ type: 'url', url: 'https://mcp.bling.com.br/mcp', name: 'bling', authorization_token: t }]
       })
     });
-    const data = await response.json();
-    if (!response.ok) return res.status(response.status).json({ error: data });
-    const txt = (data.content || [])
-      .filter(function(b){ return b.type === 'text'; })
-      .map(function(b){ return b.text; })
-      .join('\n');
-    return res.json({ reply: txt });
-  } catch (e) {
-    return res.status(500).json({ error: 'Erro interno' });
-  }
+    let resp = await callAPI(token);
+    let data = await resp.json();
+    // Se token expirou, tenta refresh automatico
+    if (!resp.ok && JSON.stringify(data).includes('Authentication')) {
+      const refreshed = await refreshBlingToken();
+      if (refreshed) { token = getBlingToken(); resp = await callAPI(token); data = await resp.json(); }
+    }
+    if (!resp.ok) return res.status(resp.status).json({ error: data });
+    const txt = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+    const toolsUsed = (data.content || []).filter(b => b.type === 'mcp_tool_use').map(b => b.name);
+    return res.json({ reply: txt, toolsUsed });
+  } catch(e) { return res.status(500).json({ error: 'Erro interno' }); }
 });
 
 app.get('/ping', (_, res) => res.json({ status: 'ok', ts: Date.now() }));
