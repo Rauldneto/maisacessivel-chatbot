@@ -178,7 +178,7 @@ function enviar(){
   var l=am('Ace está digitando...','l');
   fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:H})})
   .then(function(r){return r.json();})
-  .then(function(d){l.remove();am(d.reply||'Erro, tente novamente.','b');H.push({role:'assistant',content:d.reply||'');})
+  .then(function(d){l.remove();am(d.reply||'Erro, tente novamente.','b');H.push({role:'assistant',content:d.reply||''});})
   .catch(function(){l.remove();am('Erro de conexão.','b');});
 }
 document.getElementById('sb').onclick=enviar;
