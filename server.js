@@ -11,6 +11,47 @@ app.use(express.json());
 
 const SYSTEM_PROMPT = 'Voce eh o Ace, assistente virtual da Mais Acessivel (maisacessivel.com.br), distribuidora de produtos de acessibilidade ha 6 anos em Goiania-GO. PRODUTOS: barras de apoio, piso tatil, placas Braille, alarmes PCD, sanitarios adaptados. Colete nome e contato do cliente. Responda sempre em portugues brasileiro.';
 
+// Servir o JS do chatbot como arquivo separado
+app.get('/chat.js', (_, res) => {
+  res.setHeader('Content-Type', 'application/javascript');
+  res.send(`
+var H=[];
+function am(t,c){
+  var d=document.createElement('div');
+  d.className=c;
+  d.innerHTML=t.replace(/\\n/g,'<br>');
+  var m=document.getElementById('msgs');
+  m.appendChild(d);
+  m.scrollTop=9999;
+  return d;
+}
+function enviar(){
+  var inp=document.getElementById('inp');
+  var t=inp.value.trim();
+  if(!t)return;
+  inp.value='';
+  am(t,'u');
+  H.push({role:'user',content:t});
+  var l=am('Ace esta digitando...','l');
+  fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:H})})
+  .then(function(r){return r.json();})
+  .then(function(d){
+    l.remove();
+    am(d.reply||'Erro, tente novamente.','b');
+    H.push({role:'assistant',content:d.reply||''});
+  })
+  .catch(function(){
+    l.remove();
+    am('Erro de conexao.','b');
+  });
+}
+document.getElementById('sb').onclick=enviar;
+document.getElementById('inp').onkeydown=function(e){
+  if(e.key==='Enter'){e.preventDefault();enviar();}
+};
+  `);
+});
+
 const HTML = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -46,25 +87,7 @@ body{font-family:Segoe UI,sans-serif;background:#f0f4f8;display:flex;flex-direct
 <input id="inp" type="text" placeholder="Digite aqui...">
 <button id="sb" type="button">&#10148;</button>
 </div>
-<script>
-var H=[];
-function am(t,c){var d=document.createElement('div');d.className=c;d.innerHTML=t;var m=document.getElementById('msgs');m.appendChild(d);m.scrollTop=9999;return d;}
-function enviar(){
-  var inp=document.getElementById('inp');
-  var t=inp.value.trim();
-  if(!t)return;
-  inp.value='';
-  am(t,'u');
-  H.push({role:'user',content:t});
-  var l=am('Ace esta digitando...','l');
-  fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:H})})
-  .then(function(r){return r.json();})
-  .then(function(d){l.remove();am(d.reply||'Erro, tente novamente.','b');H.push({role:'assistant',content:d.reply||'';});})
-  .catch(function(){l.remove();am('Erro de conexao.','b');});
-}
-document.getElementById('sb').onclick=enviar;
-document.getElementById('inp').onkeydown=function(e){if(e.key==='Enter'){e.preventDefault();enviar();}};
-</script>
+<script src="/chat.js"></script>
 </body>
 </html>`;
 
@@ -90,7 +113,10 @@ app.post('/chat', async (req, res) => {
     });
     const data = await response.json();
     if (!response.ok) return res.status(response.status).json({ error: data });
-    const txt = (data.content || []).filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('\n');
+    const txt = (data.content || [])
+      .filter(function(b){ return b.type === 'text'; })
+      .map(function(b){ return b.text; })
+      .join('\n');
     return res.json({ reply: txt });
   } catch (e) {
     return res.status(500).json({ error: 'Erro interno' });
