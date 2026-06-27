@@ -120,7 +120,7 @@ app.get('/leads', async (_, res) => {
 });
 
 // ── SYSTEM PROMPT DINAMICO ──
-async function buildSystemPrompt() {
+async function buildSystemPrompt(horaCliente) {
   const cfg = await fbGet('ace_config') || DEFAULT_CONFIG;
 
   // APENAS instrucoes do administrador — sem texto fixo
@@ -137,8 +137,7 @@ async function buildSystemPrompt() {
     if (rr) prompt += '\n\nRESPOSTAS RAPIDAS — use exatamente estas:\n' + rr;
   }
   if (cfg.horarioIni && cfg.horarioFim) {
-    const now = new Date(new Date().toLocaleString('en-US', {timeZone:'America/Sao_Paulo'}));
-    const hora = now.getHours() * 60 + now.getMinutes();
+    const hora = horaCliente !== null ? horaCliente : new Date(new Date().toLocaleString('en-US', {timeZone:'America/Sao_Paulo'})).getHours() * 60 + new Date(new Date().toLocaleString('en-US', {timeZone:'America/Sao_Paulo'})).getMinutes();
     const ini = parseInt(cfg.horarioIni.split(':')[0]) * 60 + parseInt(cfg.horarioIni.split(':')[1]);
     const fim = parseInt(cfg.horarioFim.split(':')[0]) * 60 + parseInt(cfg.horarioFim.split(':')[1]);
     if (hora < ini || hora > fim) {
@@ -218,7 +217,8 @@ app.post('/chat', async (req, res) => {
   if (!messages) return res.status(400).json({ error: 'invalid' });
   const token = getBlingToken();
   const useBling = token && token.length > 20;
-  const systemPrompt = await buildSystemPrompt();
+  const horaCliente = req.body.horaCliente || null;
+  const systemPrompt = await buildSystemPrompt(horaCliente);
 
   const buildBody = (t, withBling) => {
     const body = { model: 'claude-haiku-4-5-20251001', max_tokens: 1024, system: systemPrompt, messages };
