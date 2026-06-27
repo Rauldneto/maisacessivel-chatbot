@@ -160,12 +160,14 @@ async function buildSystemPrompt(horaCliente) {
   prompt += '\n\nDados da empresa: WhatsApp ' + (cfg.whatsapp||'(62) 3517-3971') + ', Site: ' + (cfg.site||'maisacessivel.com.br') + ', Endereco: ' + (cfg.endereco||'Goiania, GO') + '.';
 
   // Instrucao obrigatoria de usar Bling — SEMPRE
-  prompt += '\n\nREGRA OBRIGATÓRIA DE CADASTRO:\n' +
-    '- Quando tiver coletado nome, CPF/CNPJ e telefone do cliente, você DEVE usar a ferramenta do Bling para cadastrar o contato.\n' +
-    '- Use a ferramenta createContact do Bling com os dados coletados.\n' +
-    '- Somente após a ferramenta confirmar o cadastro (sucesso ou erro), informe o cliente do resultado.\n' +
-    '- NUNCA diga que cadastrou sem ter usado a ferramenta. Se a ferramenta falhar, informe o cliente e peça para tentar novamente.\n' +
-    '- Após cadastro confirmado, encaminhe para a equipe de vendas pelo WhatsApp ' + (cfg.whatsapp||'(62) 3517-3971') + '.';
+  prompt += '\n\nREGRA CRÍTICA — CADASTRO NO BLING:\n' +
+    'Você tem acesso à ferramenta MCP do Bling. OBRIGATORIAMENTE:\n' +
+    '1. Quando tiver nome + CPF/CNPJ + telefone do cliente, CHAME IMEDIATAMENTE a ferramenta createContact do Bling.\n' +
+    '2. NÃO simule o cadastro. NÃO diga que cadastrou sem ter chamado a ferramenta.\n' +
+    '3. Se a ferramenta retornar sucesso: diga "Cadastro realizado com sucesso! ID: [id retornado]"\n' +
+    '4. Se a ferramenta retornar erro: diga "Houve um problema no cadastro: [erro]" e peça para tentar novamente.\n' +
+    '5. Após cadastro confirmado pela ferramenta, encaminhe para vendas: ' + (cfg.whatsapp||'(62) 3517-3971') + '\n' +
+    'LEMBRE-SE: Você TEM a ferramenta createContact disponível. USE-A agora quando tiver os dados.';
 
   if (cfg.proibidas && cfg.proibidas.length > 0) {
     prompt += '\n\nPALAVRAS PROIBIDAS — NUNCA use: ' + cfg.proibidas.join(', ');
@@ -289,7 +291,7 @@ app.post('/chat', async (req, res) => {
   const systemPrompt = await buildSystemPrompt(horaCliente);
 
   const buildBody = (t, withBling) => {
-    const body = { model: 'claude-haiku-4-5-20251001', max_tokens: 1024, system: systemPrompt, messages };
+    const body = { model: 'claude-sonnet-4-6', max_tokens: 1024, system: systemPrompt, messages };
     if (withBling) body.mcp_servers = [{ type: 'url', url: 'https://mcp.bling.com.br/mcp', name: 'bling', authorization_token: t }];
     return body;
   };
@@ -345,7 +347,7 @@ Inclua TODAS as configurações no JSON, não apenas as alteradas.`;
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 2000, system: systemPrompt, messages })
+      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 2000, system: systemPrompt, messages })
     });
     const data = await response.json();
     if (!response.ok) return res.status(response.status).json({ error: data });
