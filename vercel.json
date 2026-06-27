@@ -1,0 +1,43 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "server.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/chat.js",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/chat",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/config",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/leads",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/ping",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/renovar-token",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/callback",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/server.js"
+    }
+  ]
+}
