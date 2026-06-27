@@ -179,6 +179,21 @@ function enviar(){
 }
 document.getElementById('sb').onclick=enviar;
 document.getElementById('inp').onkeydown=function(e){if(e.key==='Enter'){e.preventDefault();enviar();}};
+
+// Carregar mensagem inicial com hora correta
+(function(){
+  var horaMin=new Date().getHours()*60+new Date().getMinutes();
+  fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:'__INIT__'}],horaCliente:horaMin,init:true})})
+  .then(function(r){return r.json();})
+  .then(function(d){
+    var el=document.getElementById('msg-inicial');
+    if(el&&d.reply) el.innerHTML=d.reply.replace(/\\n/g,'<br>').replace(/\\*\\*(.*?)\\*\\*/g,'<b>$1</b>');
+  })
+  .catch(function(){
+    var el=document.getElementById('msg-inicial');
+    if(el) el.innerHTML='Olá! Como posso ajudar?';
+  });
+})();
   `);
 });
 
@@ -217,25 +232,6 @@ body{font-family:Segoe UI,sans-serif;background:#f0f4f8;display:flex;flex-direct
 <button id="sb" type="button">&#10148;</button>
 </div>
 <script src="/chat.js"></script>
-<script>
-(function(){
-  var horaMin = new Date().getHours()*60 + new Date().getMinutes();
-  fetch('/chat', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({messages: [{role:'user', content:'__INIT__'}], horaCliente: horaMin, init: true})
-  })
-  .then(function(r){return r.json();})
-  .then(function(d){
-    var el = document.getElementById('msg-inicial');
-    if(el && d.reply) el.innerHTML = d.reply.replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<b>$1</b>');
-  })
-  .catch(function(){
-    var el = document.getElementById('msg-inicial');
-    if(el) el.innerHTML = 'Olá! Como posso ajudar?';
-  });
-})();
-</script>
 </body>
 </html>`;
 
