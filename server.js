@@ -312,74 +312,17 @@ app.post('/chat', async (req, res) => {
 
     const txt = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
 
-    // Detectar qualquer formato de cadastro na resposta
+    // Detectar bloco de cadastro e executar via API REST do Bling
+    const cadastroMatch = txt.match(/<CADASTRAR>([\s\S]*?)<\/CADASTRAR>/);
     let cadastroResult = null;
-    let replyLimpo = txt
-      .replace(/<CADASTRAR>[\s\S]*?<\/CADASTRAR>/g, '')
-      .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
-      .replace(/```json[\s\S]*?```/g, '')
-      .trim();
+    let replyLimpo = txt.replace(/<CADASTRAR>[\s\S]*?<\/CADASTRAR>/, '').trim();
 
-    // Tentar extrair dados de qualquer formato
-    let dadosCadastro = null;
-
-    // Formato 1: <CADASTRAR>{...}</CADASTRAR>
-    const m1 = txt.match(/<CADASTRAR>([\s\S]*?)<\/CADASTRAR>/);
-    if (m1) { try { dadosCadastro = JSON.parse(m1[1]); } catch(e) {} }
-
-    // Formato 2: <tool_call>{...}</tool_call>
-    if (!dadosCadastro) {
-      const m2 = txt.match(/<tool_call>\s*(\{[\s\S]*?\})\s*<\/tool_call>/);
-      if (m2) {
-        try {
-          const args = JSON.parse(m2[1]);
-          dadosCadastro = {
-            nome: args.nome || args.nomeContato || args.name || '',
-            tipo: (args.tipoPessoa === 'J' || args.tipo === 'PJ') ? 'PJ' : 'PF',
-            cpfCnpj: args.cpf || args.cnpj || args.cpfCnpj || '',
-            telefone: args.celular || args.telefone || args.phone || '',
-            cep: args.cep || '',
-            email: args.email || ''
-          };
-        } catch(e) {}
-      }
-    }
-
-    // Formato 3: extrair dos dados do usuario nas mensagens
-    if (!dadosCadastro) {
-      const conv = messages.map(m => m.content).join(' ');
-      // Verificar se tem dados suficientes para cadastrar
-      const temNome = messages.some(m => m.role === 'user' && m.content.length > 2);
-      const temCPF = /\d{3}\.\d{3}\.\d{3}-\d{2}|\d{11}/.test(conv);
-      const temCNPJ = /\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}|\d{14}/.test(conv);
-      const temTel = /\(?\d{2}\)?[\s\-]?9?\d{4}[\s\-]?\d{4}/.test(conv);
-      const indicaCadastro = /cadastr|registr|salvar|criar conta/i.test(txt);
-
-      if ((temCPF || temCNPJ) && temTel && indicaCadastro) {
-        const nomeMatch = conv.match(/(?:nome[:\s]+|chamo[\s]+|sou[\s]+|me chamo[\s]+)([A-Za-zÀ-ÿ\s]{3,40})/i);
-        const cpfMatch = conv.match(/(\d{3}\.\d{3}\.\d{3}-\d{2}|\d{11})/);
-        const cnpjMatch = conv.match(/(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}|\d{14})/);
-        const telMatch = conv.match(/(\(?\d{2}\)?[\s\-]?9?\d{4}[\s\-]?\d{4})/);
-        const cepMatch = conv.match(/(\d{5}-?\d{3})/);
-        const emailMatch = conv.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
-
-        if ((cpfMatch || cnpjMatch) && telMatch) {
-          const userMsg = messages.filter(m=>m.role==='user').map(m=>m.content).join(' ');
-          dadosCadastro = {
-            nome: nomeMatch ? nomeMatch[1].trim() : userMsg.substring(0,30),
-            tipo: cnpjMatch ? 'PJ' : 'PF',
-            cpfCnpj: (cpfMatch || cnpjMatch)[1],
-            telefone: telMatch[1],
-            cep: cepMatch ? cepMatch[1] : '',
-            email: emailMatch ? emailMatch[1] : ''
-          };
-        }
-      }
-    }
-
-    if (dadosCadastro && dadosCadastro.nome && dadosCadastro.cpfCnpj) {
+    if (cadastroMatch) {
       try {
+        const dadosCadastro = JSON.parse(cadastroMatch[1]);
         cadastroResult = await blingCadastrarContato(dadosCadastro);
+
+        // Salvar lead no Firebase
         if (cadastroResult.ok) {
           const leads = await fbGet('ace_leads') || [];
           const arr = Array.isArray(leads) ? leads : Object.values(leads);
