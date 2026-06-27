@@ -201,13 +201,32 @@ body{font-family:Segoe UI,sans-serif;background:#f0f4f8;display:flex;flex-direct
 </div>
 <div id="bn">&#128295; Versão em teste</div>
 <div id="msgs">
-<div class="b">Olá! 👋 Sou o <b>Ace</b>, assistente da <b>Mais Acessível</b>. Somos o maior distribuidor de produtos para acessibilidade da região Centro Oeste e Norte do país!<br><br>Qual é o seu nome?</div>
+<div class="b" id="msg-inicial">...</div>
 </div>
 <div id="ia">
 <input id="inp" type="text" placeholder="Digite aqui...">
 <button id="sb" type="button">&#10148;</button>
 </div>
 <script src="/chat.js"></script>
+<script>
+(function(){
+  var horaMin = new Date().getHours()*60 + new Date().getMinutes();
+  fetch('/chat', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({messages: [{role:'user', content:'__INIT__'}], horaCliente: horaMin, init: true})
+  })
+  .then(function(r){return r.json();})
+  .then(function(d){
+    var el = document.getElementById('msg-inicial');
+    if(el && d.reply) el.innerHTML = d.reply.replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<b>$1</b>');
+  })
+  .catch(function(){
+    var el = document.getElementById('msg-inicial');
+    if(el) el.innerHTML = 'Olá! Como posso ajudar?';
+  });
+})();
+</script>
 </body>
 </html>`;
 
@@ -215,6 +234,15 @@ app.get('/', (_, res) => res.setHeader('Content-Type','text/html').send(HTML));
 
 app.post('/chat', async (req, res) => {
   const { messages } = req.body;
+  // Mensagem inicial — gerar apenas a abertura
+  if (req.body.init && messages.length === 1 && messages[0].content === '__INIT__') {
+    const horaCliente = req.body.horaCliente || 0;
+    const cfg = await fbGet('ace_config') || DEFAULT_CONFIG;
+    const h = horaCliente;
+    const saudacao = h >= 0 && h < 720 ? 'Bom dia' : h < 1080 ? 'Boa tarde' : 'Boa noite';
+    const bv = cfg.msgBoasVindas || (saudacao + '! Como posso ajudar?');
+    return res.json({ reply: bv });
+  }
   if (!messages) return res.status(400).json({ error: 'invalid' });
   const token = getBlingToken();
   const useBling = token && token.length > 20;
