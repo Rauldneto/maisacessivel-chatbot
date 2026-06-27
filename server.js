@@ -159,6 +159,14 @@ async function buildSystemPrompt(horaCliente) {
   // Dados complementares
   prompt += '\n\nDados da empresa: WhatsApp ' + (cfg.whatsapp||'(62) 3517-3971') + ', Site: ' + (cfg.site||'maisacessivel.com.br') + ', Endereco: ' + (cfg.endereco||'Goiania, GO') + '.';
 
+  // Instrucao obrigatoria de usar Bling — SEMPRE
+  prompt += '\n\nREGRA OBRIGATÓRIA DE CADASTRO:\n' +
+    '- Quando tiver coletado nome, CPF/CNPJ e telefone do cliente, você DEVE usar a ferramenta do Bling para cadastrar o contato.\n' +
+    '- Use a ferramenta createContact do Bling com os dados coletados.\n' +
+    '- Somente após a ferramenta confirmar o cadastro (sucesso ou erro), informe o cliente do resultado.\n' +
+    '- NUNCA diga que cadastrou sem ter usado a ferramenta. Se a ferramenta falhar, informe o cliente e peça para tentar novamente.\n' +
+    '- Após cadastro confirmado, encaminhe para a equipe de vendas pelo WhatsApp ' + (cfg.whatsapp||'(62) 3517-3971') + '.';
+
   if (cfg.proibidas && cfg.proibidas.length > 0) {
     prompt += '\n\nPALAVRAS PROIBIDAS — NUNCA use: ' + cfg.proibidas.join(', ');
   }
