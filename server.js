@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const fetch = require('node-fetch');
+// fetch nativo do Node 18
 const fs = require('fs');
 
 const app = express();
