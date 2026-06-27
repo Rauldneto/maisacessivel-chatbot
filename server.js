@@ -123,8 +123,17 @@ app.get('/leads', async (_, res) => {
 async function buildSystemPrompt(horaCliente) {
   const cfg = await fbGet('ace_config') || DEFAULT_CONFIG;
 
+  // Calcular hora atual em Brasilia
+  const horaAtual = horaCliente !== null ? horaCliente : 
+    (() => { const n = new Date(new Date().toLocaleString('en-US', {timeZone:'America/Sao_Paulo'})); return n.getHours()*60+n.getMinutes(); })();
+  const h = Math.floor(horaAtual/60);
+  const saudacao = h >= 6 && h < 12 ? 'Bom dia' : h >= 12 && h < 18 ? 'Boa tarde' : 'Boa noite';
+
   // APENAS instrucoes do administrador — sem texto fixo
-  let prompt = cfg.instrucoes || 'Voce e um assistente virtual. Responda em portugues brasileiro.';
+  let prompt = (cfg.instrucoes || 'Voce e um assistente virtual. Responda em portugues brasileiro.');
+  
+  // Informar a hora para o Claude usar corretamente
+  prompt += '\n\nINFORMAÇÃO DE HORA: Agora são ' + h + 'h (horário de Brasília). A saudação correta agora é "' + saudacao + '". Use isso ao cumprimentar.';
 
   // Dados complementares
   prompt += '\n\nDados da empresa: WhatsApp ' + (cfg.whatsapp||'(62) 3517-3971') + ', Site: ' + (cfg.site||'maisacessivel.com.br') + ', Endereco: ' + (cfg.endereco||'Goiania, GO') + '.';
