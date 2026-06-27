@@ -291,7 +291,7 @@ app.post('/chat', async (req, res) => {
   const systemPrompt = await buildSystemPrompt(horaCliente);
 
   const buildBody = (t, withBling) => {
-    const body = { model: 'claude-sonnet-4-6', max_tokens: 1024, system: systemPrompt, messages };
+    const body = { model: 'claude-sonnet-4-6', max_tokens: 4096, system: systemPrompt, messages };
     if (withBling) body.mcp_servers = [{ type: 'url', url: 'https://mcp.bling.com.br/mcp', name: 'bling', authorization_token: t }];
     return body;
   };
