@@ -219,7 +219,7 @@ body{font-family:Segoe UI,sans-serif;background:#f0f4f8;display:flex;flex-direct
 </div>
 <div id="bn">&#128295; Versão em teste</div>
 <div id="msgs">
-<div class="b">Olá! 👋 Sou o <b>Ace</b>, assistente da <b>Mais Acessível</b>. Posso ajudar com barras de apoio, piso tátil, Braille e muito mais!<br><br>Qual é o seu nome?</div>
+<div class="b">Olá! 👋 Sou o <b>Ace</b>, assistente da <b>Mais Acessível</b>. Somos o maior distribuidor de produtos para acessibilidade da região Centro Oeste e Norte do país!<br><br>Qual é o seu nome?</div>
 </div>
 <div id="ia">
 <input id="inp" type="text" placeholder="Digite aqui...">
