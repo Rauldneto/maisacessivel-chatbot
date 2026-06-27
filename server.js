@@ -321,6 +321,43 @@ app.post('/chat', async (req, res) => {
   } catch(e) { return res.status(500).json({ error: 'Erro: ' + e.message }); }
 });
 
+// Rota para configurar o Ace via IA
+app.post('/configurar', async (req, res) => {
+  const { messages, configAtual } = req.body;
+  if (!messages) return res.status(400).json({ error: 'invalid' });
+  try {
+    const systemPrompt = `Você é um assistente especializado em configurar o chatbot "Ace" da Mais Acessível.
+O usuário vai te dizer em linguagem natural o que quer que o Ace faça.
+Você deve: 1) Entender o pedido, 2) Atualizar as instruções adequadamente, 3) Explicar o que foi alterado de forma clara e resumida.
+A configuração atual do Ace é: ${JSON.stringify(configAtual||{}, null, 2)}.
+Responda SEMPRE em português brasileiro de forma amigável.
+Ao final da sua resposta, inclua as configurações ATUALIZADAS no formato: <CONFIG>${'{'}"instrucoes":"...","tom":"...","proibidas":[...],"respostas":[...]${'}'}</CONFIG>.
+Inclua TODAS as configurações no JSON, não apenas as alteradas.`;
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 2000, system: systemPrompt, messages })
+    });
+    const data = await response.json();
+    if (!response.ok) return res.status(response.status).json({ error: data });
+    const reply = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
+
+    // Extrair e salvar config automaticamente
+    const configMatch = reply.match(/<CONFIG>([\s\S]*?)<\/CONFIG>/);
+    let novaConfig = null;
+    if (configMatch) {
+      try {
+        novaConfig = JSON.parse(configMatch[1]);
+        const atual = await fbGet('ace_config') || {};
+        await fbSet('ace_config', Object.assign({}, atual, novaConfig));
+      } catch(e) {}
+    }
+    const textoLimpo = reply.replace(/<CONFIG>[\s\S]*?<\/CONFIG>/, '').trim();
+    return res.json({ reply: textoLimpo, configAtualizada: !!novaConfig });
+  } catch(e) { return res.status(500).json({ error: 'Erro: ' + e.message }); }
+});
+
 app.get('/ping', (_, res) => res.json({ status: 'ok', ts: Date.now(), firebase: FIREBASE_URL }));
 
 // Auto-ping a cada 10 minutos para nao dormir no Render free tier
