@@ -312,17 +312,35 @@ app.post('/chat', async (req, res) => {
 
     const txt = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
 
-    // Detectar bloco de cadastro e executar via API REST do Bling
-    const cadastroMatch = txt.match(/<CADASTRAR>([\s\S]*?)<\/CADASTRAR>/);
+    // Detectar bloco de cadastro — suporta <CADASTRAR> e <tool_call>
+    let cadastroMatch = txt.match(/<CADASTRAR>([\s\S]*?)<\/CADASTRAR>/);
+    let toolCallMatch = txt.match(/<tool_call>\s*(\{[\s\S]*?\})\s*<\/tool_call>/);
     let cadastroResult = null;
-    let replyLimpo = txt.replace(/<CADASTRAR>[\s\S]*?<\/CADASTRAR>/, '').trim();
+    let replyLimpo = txt
+      .replace(/<CADASTRAR>[\s\S]*?<\/CADASTRAR>/, '')
+      .replace(/<tool_call>[\s\S]*?<\/tool_call>/, '')
+      .trim();
 
+    let dadosCadastro = null;
     if (cadastroMatch) {
+      try { dadosCadastro = JSON.parse(cadastroMatch[1]); } catch(e) {}
+    } else if (toolCallMatch) {
       try {
-        const dadosCadastro = JSON.parse(cadastroMatch[1]);
-        cadastroResult = await blingCadastrarContato(dadosCadastro);
+        const args = JSON.parse(toolCallMatch[1]);
+        dadosCadastro = {
+          nome: args.nome || args.nomeContato || '',
+          tipo: args.tipoPessoa === 'J' ? 'PJ' : 'PF',
+          cpfCnpj: args.cpf || args.cnpj || args.cpfCnpj || '',
+          telefone: args.celular || args.telefone || '',
+          cep: args.cep || '',
+          email: args.email || ''
+        };
+      } catch(e) {}
+    }
 
-        // Salvar lead no Firebase
+    if (dadosCadastro && dadosCadastro.nome) {
+      try {
+        cadastroResult = await blingCadastrarContato(dadosCadastro);
         if (cadastroResult.ok) {
           const leads = await fbGet('ace_leads') || [];
           const arr = Array.isArray(leads) ? leads : Object.values(leads);
