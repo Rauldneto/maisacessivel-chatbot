@@ -162,7 +162,8 @@ function enviar(){
   var t=inp.value.trim();if(!t)return;inp.value='';
   am(t,'u');H.push({role:'user',content:t});
   var l=am('Ace está digitando...','l');
-  fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:H})})
+  var agora=new Date();var horaMin=agora.getHours()*60+agora.getMinutes();
+  fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:H,horaCliente:horaMin})})
   .then(function(r){return r.json();})
   .then(function(d){l.remove();am(d.reply||'Erro, tente novamente.','b');H.push({role:'assistant',content:d.reply||''});})
   .catch(function(){l.remove();am('Erro de conexão.','b');});
