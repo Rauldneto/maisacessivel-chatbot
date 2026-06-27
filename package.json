@@ -2,7 +2,6 @@
   "name": "maisacessivel-chatbot",
   "version": "1.0.0",
   "description": "Backend do chatbot Ace - Mais Acessivel",
-  "type": "commonjs",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
