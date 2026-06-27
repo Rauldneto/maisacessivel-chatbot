@@ -234,14 +234,19 @@ app.get('/', (_, res) => res.setHeader('Content-Type','text/html').send(HTML));
 
 app.post('/chat', async (req, res) => {
   const { messages } = req.body;
-  // Mensagem inicial — gerar apenas a abertura
+  // Mensagem inicial — Ace gera com hora correta seguindo instrucoes
   if (req.body.init && messages.length === 1 && messages[0].content === '__INIT__') {
     const horaCliente = req.body.horaCliente || 0;
-    const cfg = await fbGet('ace_config') || DEFAULT_CONFIG;
-    const h = horaCliente;
-    const saudacao = h >= 0 && h < 720 ? 'Bom dia' : h < 1080 ? 'Boa tarde' : 'Boa noite';
-    const bv = cfg.msgBoasVindas || (saudacao + '! Como posso ajudar?');
-    return res.json({ reply: bv });
+    const systemPrompt = await buildSystemPrompt(horaCliente);
+    const initMessages = [{role: 'user', content: 'Inicie o atendimento agora com a mensagem de abertura.'}];
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','x-api-key':ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
+      body: JSON.stringify({model:'claude-haiku-4-5-20251001', max_tokens:300, system: systemPrompt, messages: initMessages})
+    });
+    const data = await resp.json();
+    const txt = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
+    return res.json({ reply: txt });
   }
   if (!messages) return res.status(400).json({ error: 'invalid' });
   const token = getBlingToken();
