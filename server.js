@@ -97,7 +97,7 @@ const DEFAULT_CONFIG = {
   endereco: 'Goiânia, GO',
   horarioIni: '08:00',
   horarioFim: '18:00',
-  msgBoasVindas: 'Olá! 👋 Sou o Ace, assistente da Mais Acessível. Posso ajudar com barras de apoio, piso tátil, Braille e muito mais!\n\nQual é o seu nome?',
+  msgBoasVindas: '',
   msgForaHorario: 'Olá! Nosso horário é seg-sex 8h às 18h. Deixe nome e WhatsApp que retornamos em breve!',
   proibidas: [],
   respostas: [],
@@ -122,47 +122,29 @@ app.get('/leads', async (_, res) => {
 // ── SYSTEM PROMPT DINAMICO ──
 async function buildSystemPrompt() {
   const cfg = await fbGet('ace_config') || DEFAULT_CONFIG;
-  const tom = cfg.tom === 'formal' ? 'formal e profissional' : cfg.tom === 'tecnico' ? 'técnico e detalhado' : 'amigável e descontraído';
 
-  // Base minima — identidade do Ace
-  let prompt = `Você é o Ace, assistente virtual da Mais Acessível (${cfg.site || 'maisacessivel.com.br'}), distribuidora de produtos de acessibilidade há 6 anos em Goiânia-GO.
-WhatsApp: ${cfg.whatsapp || '(62) 3517-3971'}.
-Endereço: ${cfg.endereco || 'Goiânia, GO'}.
-Tom de voz: ${tom}.
-Responda SEMPRE em português brasileiro.`;
+  // APENAS instrucoes do administrador — sem texto fixo
+  let prompt = cfg.instrucoes || 'Voce e um assistente virtual. Responda em portugues brasileiro.';
 
-  // Instrucoes do administrador — prioridade maxima
-  if (cfg.instrucoes) {
-    prompt += `
+  // Dados complementares
+  prompt += '\n\nDados da empresa: WhatsApp ' + (cfg.whatsapp||'(62) 3517-3971') + ', Site: ' + (cfg.site||'maisacessivel.com.br') + ', Endereco: ' + (cfg.endereco||'Goiania, GO') + '.';
 
-INSTRUÇÕES DO ADMINISTRADOR (siga rigorosamente):
-${cfg.instrucoes}`;
-  }
-
-  // Palavras proibidas
   if (cfg.proibidas && cfg.proibidas.length > 0) {
-    prompt += `
-
-PALAVRAS PROIBIDAS — NUNCA use: ${cfg.proibidas.join(', ')}`;
+    prompt += '\n\nPALAVRAS PROIBIDAS — NUNCA use: ' + cfg.proibidas.join(', ');
   }
-
-  // Respostas rapidas
   if (cfg.respostas && cfg.respostas.length > 0) {
-    const rr = cfg.respostas.filter(r => r.pergunta && r.resposta).map(r => `- "${r.pergunta}" → "${r.resposta}"`).join('\n');
-    if (rr) prompt += `\n\nRESPOSTAS RÁPIDAS — use exatamente estas:\n${rr}`;
+    const rr = cfg.respostas.filter(function(r){return r.pergunta && r.resposta;}).map(function(r){return '- "' + r.pergunta + '" -> "' + r.resposta + '"';}).join('\n');
+    if (rr) prompt += '\n\nRESPOSTAS RAPIDAS — use exatamente estas:\n' + rr;
   }
-
-  // Horario
   if (cfg.horarioIni && cfg.horarioFim) {
     const now = new Date(new Date().toLocaleString('en-US', {timeZone:'America/Sao_Paulo'}));
     const hora = now.getHours() * 60 + now.getMinutes();
-    const [hI, mI] = cfg.horarioIni.split(':').map(Number);
-    const [hF, mF] = cfg.horarioFim.split(':').map(Number);
-    if (hora < hI*60+mI || hora > hF*60+mF) {
-      prompt += `\n\nFORA DO HORÁRIO: Informe: "${cfg.msgForaHorario}"`;
+    const ini = parseInt(cfg.horarioIni.split(':')[0]) * 60 + parseInt(cfg.horarioIni.split(':')[1]);
+    const fim = parseInt(cfg.horarioFim.split(':')[0]) * 60 + parseInt(cfg.horarioFim.split(':')[1]);
+    if (hora < ini || hora > fim) {
+      prompt += '\n\nFORA DO HORARIO: Informe ao cliente: "' + cfg.msgForaHorario + '"';
     }
   }
-
   return prompt;
 }
 
