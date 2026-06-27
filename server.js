@@ -1,7 +1,7 @@
-import express from 'express';
-import cors from 'cors';
-import fetch from 'node-fetch';
-import fs from 'fs';
+const express = require('express');
+const cors = require('cors');
+const fetch = require('node-fetch');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -296,4 +296,9 @@ app.post('/chat', async (req, res) => {
 });
 
 app.get('/ping', (_, res) => res.json({ status: 'ok', ts: Date.now(), firebase: FIREBASE_URL }));
-app.listen(PORT, () => console.log('Ace rodando porta ' + PORT));
+
+if (require.main === module) {
+  app.listen(PORT, () => console.log('Ace rodando porta ' + PORT));
+}
+
+module.exports = app;
