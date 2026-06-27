@@ -39,18 +39,39 @@ async function fbSet(path, data) {
 }
 
 // ── BLING TOKEN ──
-function saveToken(access, refresh) {
-  try { fs.writeFileSync(TOKEN_FILE, JSON.stringify({ access_token: access, refresh_token: refresh, ts: Date.now() })); } catch(e) {}
+// Cache em memoria (rapido) + Firebase (persistente)
+let _tokenCache = null;
+
+async function saveToken(access, refresh) {
+  _tokenCache = { access_token: access, refresh_token: refresh, ts: Date.now() };
+  // Salvar no Firebase para persistir apos reinicializacao
+  await fbSet('bling_token', _tokenCache);
+  // Salvar em arquivo como backup local
+  try { fs.writeFileSync(TOKEN_FILE, JSON.stringify(_tokenCache)); } catch(e) {}
 }
-function loadToken() {
-  try { return JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf8')); } catch(e) { return null; }
+
+async function loadToken() {
+  // 1. Tentar cache em memoria
+  if (_tokenCache && _tokenCache.access_token) return _tokenCache;
+  // 2. Tentar arquivo local
+  try {
+    const local = JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf8'));
+    if (local && local.access_token) { _tokenCache = local; return local; }
+  } catch(e) {}
+  // 3. Tentar Firebase
+  try {
+    const fb = await fbGet('bling_token');
+    if (fb && fb.access_token) { _tokenCache = fb; return fb; }
+  } catch(e) {}
+  return null;
 }
-function getBlingToken() {
-  const d = loadToken();
+
+async function getBlingToken() {
+  const d = await loadToken();
   return (d && d.access_token) || process.env.BLING_MCP_TOKEN || '';
 }
 async function refreshBlingToken() {
-  const d = loadToken();
+  const d = await loadToken();
   if (!d || !d.refresh_token) return false;
   try {
     const cr = Buffer.from(BLING_CLIENT_ID + ':' + BLING_CLIENT_SECRET).toString('base64');
@@ -60,7 +81,7 @@ async function refreshBlingToken() {
       body: 'grant_type=refresh_token&refresh_token=' + d.refresh_token
     });
     const j = await r.json();
-    if (j.access_token) { saveToken(j.access_token, j.refresh_token || d.refresh_token); return true; }
+    if (j.access_token) { await saveToken(j.access_token, j.refresh_token || d.refresh_token); return true; }
     return false;
   } catch(e) { return false; }
 }
@@ -81,7 +102,7 @@ app.get('/callback', async (req, res) => {
     });
     const j = await r.json();
     if (j.access_token) {
-      saveToken(j.access_token, j.refresh_token || '');
+      await saveToken(j.access_token, j.refresh_token || '');
       return res.send('<h2 style="font-family:sans-serif;color:green;text-align:center;padding:40px">✅ Token do Bling salvo!<br><br><a href="https://maisacessivel-chatbot.onrender.com">Abrir o Ace →</a></h2>');
     }
     return res.send('<pre>Erro: ' + JSON.stringify(j) + '</pre>');
@@ -254,7 +275,7 @@ app.post('/chat', async (req, res) => {
     return res.json({ reply: txt });
   }
   if (!messages) return res.status(400).json({ error: 'invalid' });
-  const token = getBlingToken();
+  const token = await getBlingToken();
   const useBling = token && token.length > 20;
   const horaCliente = req.body.horaCliente || null;
   const systemPrompt = await buildSystemPrompt(horaCliente);
