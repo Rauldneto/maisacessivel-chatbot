@@ -297,6 +297,17 @@ app.post('/chat', async (req, res) => {
 
 app.get('/ping', (_, res) => res.json({ status: 'ok', ts: Date.now(), firebase: FIREBASE_URL }));
 
+// Auto-ping a cada 10 minutos para nao dormir no Render free tier
+const SELF_URL = process.env.RENDER_EXTERNAL_URL || 'https://maisacessivel-chatbot.onrender.com';
+setInterval(async () => {
+  try {
+    await fetch(SELF_URL + '/ping');
+    console.log('Auto-ping OK:', new Date().toLocaleString('pt-BR'));
+  } catch(e) {
+    console.log('Auto-ping falhou:', e.message);
+  }
+}, 10 * 60 * 1000);
+
 if (require.main === module) {
   app.listen(PORT, () => console.log('Ace rodando porta ' + PORT));
 }
