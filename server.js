@@ -139,10 +139,24 @@ app.post('/configurar', async (req, res) => {
   const { messages, configAtual } = req.body;
   if (!messages) return res.status(400).json({ error: 'invalid' });
   try {
+    const cfgStr = JSON.stringify(configAtual||{}, null, 2);
     const systemPrompt = `Você é um assistente especializado em configurar o chatbot "Ace" da Mais Acessível.
-O usuário vai dizer o que quer que o Ace faça. Você deve entender e atualizar as configurações.
-Configuração atual: ${JSON.stringify(configAtual||{})}.
-Responda em português. No final inclua: <CONFIG>{"instrucoes":"...","tom":"...","proibidas":[...],"respostas":[...]}</CONFIG>`;
+
+REGRA PRINCIPAL: Quando o usuário pedir uma alteração, você deve SUBSTITUIR o trecho conflitante — nunca acumular ou repetir instruções antigas. A última instrução sempre prevalece sobre a anterior.
+
+Configuração atual do Ace:
+${cfgStr}
+
+Ao processar o pedido do usuário:
+1. Identifique qual parte das instruções está sendo alterada
+2. Substitua APENAS essa parte — mantenha o restante intacto
+3. Se o usuário pedir para remover algo, remova completamente
+4. Se o usuário pedir para corrigir algo, corrija sem duplicar
+5. Nunca repita a mesma informação duas vezes nas instruções
+
+Responda em português confirmando o que foi alterado.
+No final inclua as instruções COMPLETAS e ATUALIZADAS:
+<CONFIG>{"instrucoes":"...texto completo sem repeticoes...","tom":"...","proibidas":[...],"respostas":[...]}</CONFIG>`;
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
