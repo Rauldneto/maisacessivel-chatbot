@@ -57,6 +57,84 @@ async function refreshBlingToken() {
   } catch(e) { return false; }
 }
 
+// ── RECEITA FEDERAL — CNPJ.WS ──
+async function buscarCNPJ(cnpj) {
+  const cnpjLimpo = cnpj.replace(/\D/g, '');
+  if (cnpjLimpo.length !== 14) return null;
+  try {
+    const r = await fetch('https://publica.cnpj.ws/cnpj/' + cnpjLimpo);
+    if (!r.ok) return null;
+    const d = await r.json();
+    const est = d.estabelecimento || {};
+    const socios = d.socios || [];
+
+    // Montar dados completos
+    const anos = est.data_inicio_atividade ? (() => {
+      const dt = new Date(est.data_inicio_atividade);
+      const n = new Date();
+      return n.getFullYear() - dt.getFullYear();
+    })() : 0;
+
+    return {
+      razaoSocial: d.razao_social || '',
+      nomeFantasia: est.nome_fantasia || '',
+      cnpj: cnpjLimpo,
+      situacao: est.situacao_cadastral?.descricao || '',
+      dataAbertura: est.data_inicio_atividade || '',
+      anosAtividade: anos,
+      email: est.email || '',
+      telefone: est.ddd1 && est.telefone1 ? '(' + est.ddd1 + ') ' + est.telefone1 : '',
+      cep: est.cep || '',
+      logradouro: est.logradouro || '',
+      numero: est.numero || '',
+      bairro: est.bairro || '',
+      municipio: est.cidade?.nome || '',
+      uf: est.estado?.sigla || '',
+      cnae: est.atividade_principal?.descricao || '',
+      porte: d.porte?.descricao || '',
+      natureza: d.natureza_juridica?.descricao || '',
+      socios: socios.map(s => s.nome).join(', '),
+      capitalSocial: d.capital_social || 0
+    };
+  } catch(e) { return null; }
+}
+
+async function gerarAnaliseCredito(dadosCNPJ) {
+  // Salvar analise inicial no Firebase (mesmo formato do app)
+  const analise = {
+    id: 'ac_' + Date.now(),
+    data: new Date().toLocaleString('pt-BR'),
+    origem: 'chatbot',
+    cliente: {
+      razaoSocial: dadosCNPJ.razaoSocial,
+      cnpj: dadosCNPJ.cnpj,
+      situacao: dadosCNPJ.situacao,
+      dataAbertura: dadosCNPJ.dataAbertura,
+      anosAtividade: dadosCNPJ.anosAtividade,
+      porte: dadosCNPJ.porte,
+      capitalSocial: dadosCNPJ.capitalSocial,
+      socios: dadosCNPJ.socios,
+      cnae: dadosCNPJ.cnae
+    },
+    parecer: dadosCNPJ.situacao === 'ATIVA' ?
+      (dadosCNPJ.anosAtividade >= 2 ? 'FAVORÁVEL' : 'ATENÇÃO') : 'DESFAVORÁVEL',
+    observacoes: [
+      'Empresa ' + (dadosCNPJ.situacao === 'ATIVA' ? 'ATIVA' : 'INATIVA/IRREGULAR') + ' na Receita Federal.',
+      dadosCNPJ.anosAtividade > 0 ? 'Tempo de atividade: ' + dadosCNPJ.anosAtividade + ' ano(s).' : '',
+      dadosCNPJ.capitalSocial > 0 ? 'Capital social: R$ ' + Number(dadosCNPJ.capitalSocial).toLocaleString('pt-BR') + '.' : '',
+      dadosCNPJ.porte ? 'Porte: ' + dadosCNPJ.porte + '.' : '',
+      'Análise gerada automaticamente via chatbot. Requer validação manual.'
+    ].filter(Boolean).join(' ')
+  };
+
+  // Salvar no Firebase no mesmo caminho que o app usa
+  const historico = await fbGet('historicoAnaliseCredito') || {};
+  const arr = Array.isArray(historico) ? historico : Object.values(historico);
+  arr.unshift(analise);
+  await fbSet('historicoAnaliseCredito', arr.slice(0, 200));
+  return analise;
+}
+
 // ── BLING API DIRETA ──
 async function blingCadastrarContato(dados) {
   let token = await getBlingToken();
