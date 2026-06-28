@@ -412,14 +412,37 @@ app.post('/chat', async (req, res) => {
     if (cadastroMatch) {
       try {
         const dadosCadastro = JSON.parse(cadastroMatch[1]);
+        const cnpjLimpo = (dadosCadastro.cpfCnpj||'').replace(/\D/g,'');
+
+        // Se for PJ (CNPJ 14 digitos), buscar dados na Receita Federal
+        let dadosReceita = null;
+        let analiseCredito = null;
+        if (cnpjLimpo.length === 14) {
+          dadosReceita = await buscarCNPJ(cnpjLimpo);
+          if (dadosReceita) {
+            // Enriquecer cadastro com dados da Receita
+            if (!dadosCadastro.nome || dadosCadastro.nome.length < 3) dadosCadastro.nome = dadosReceita.razaoSocial;
+            if (!dadosCadastro.email) dadosCadastro.email = dadosReceita.email;
+            if (!dadosCadastro.telefone) dadosCadastro.telefone = dadosReceita.telefone;
+            if (!dadosCadastro.cep) dadosCadastro.cep = dadosReceita.cep;
+            // Gerar analise de credito inicial
+            analiseCredito = await gerarAnaliseCredito(dadosReceita);
+          }
+        }
+
         cadastroResult = await blingCadastrarContato(dadosCadastro);
 
-        // Salvar lead no Firebase
         if (cadastroResult.ok) {
           const leads = await fbGet('ace_leads') || [];
           const arr = Array.isArray(leads) ? leads : Object.values(leads);
-          arr.unshift({ ...dadosCadastro, blingId: cadastroResult.id, data: new Date().toLocaleString('pt-BR') });
+          arr.unshift({
+            ...dadosCadastro,
+            blingId: cadastroResult.id,
+            data: new Date().toLocaleString('pt-BR'),
+            analiseCredito: analiseCredito ? analiseCredito.parecer : null
+          });
           await fbSet('ace_leads', arr.slice(0,500));
+          if (analiseCredito) cadastroResult.analiseCredito = analiseCredito;
         }
       } catch(e) { cadastroResult = { ok: false, erro: e.message }; }
     }
