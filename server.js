@@ -75,6 +75,12 @@ async function buscarCNPJ(cnpj) {
       return n.getFullYear() - dt.getFullYear();
     })() : 0;
 
+    // Regime tributario
+    const simples = d.simples || {};
+    let regimeTributario = 'Regime Normal';
+    if (simples.mei === 'Sim') regimeTributario = 'MEI';
+    else if (simples.simples === 'Sim') regimeTributario = 'Simples Nacional';
+
     return {
       razaoSocial: d.razao_social || '',
       nomeFantasia: est.nome_fantasia || '',
@@ -94,7 +100,10 @@ async function buscarCNPJ(cnpj) {
       porte: d.porte?.descricao || '',
       natureza: d.natureza_juridica?.descricao || '',
       socios: socios.map(s => s.nome).join(', '),
-      capitalSocial: d.capital_social || 0
+      capitalSocial: d.capital_social || 0,
+      regimeTributario: regimeTributario,
+      isMEI: simples.mei === 'Sim',
+      isSimples: simples.simples === 'Sim'
     };
   } catch(e) { return null; }
 }
@@ -141,25 +150,38 @@ async function blingCadastrarContato(dados) {
   if (!token) return { ok: false, erro: 'Token não disponível' };
 
   const isPJ = dados.tipo === 'PJ' || (dados.cpfCnpj||'').replace(/\D/g,'').length === 14;
+  const cnpjLimpo = (dados.cpfCnpj||'').replace(/\D/g,'');
+  const cepLimpo = (dados.cep||'').replace(/\D/g,'');
+
   const body = {
     nome: isPJ ? (dados.nomeEmpresa || dados.nome) : dados.nome,
-    fantasia: isPJ ? (dados.fantasia || dados.nomeEmpresa || dados.nome) : '',
+    fantasia: isPJ ? (dados.fantasia || dados.nomeEmpresa || '') : '',
     tipo: isPJ ? 'J' : 'F',
     email: dados.email || '',
     telefone: dados.telefone || '',
     celular: dados.celular || dados.telefone || '',
-    cpfCnpj: (dados.cpfCnpj||'').replace(/\D/g,''),
-    cep: (dados.cep||'').replace(/\D/g,''),
+    cpfCnpj: cnpjLimpo,
+    ie: '',
+    rg: '',
+    orgaoEmissor: '',
     situacao: 'A',
-    // Contato com nome do cliente
-    contatos: dados.nomeContato ? [{
-      nome: dados.nomeContato,
-      celular: dados.celular || dados.telefone || ''
-    }] : undefined
+    numero: dados.numero || 'S/N',
+    complemento: dados.complemento || '',
+    endereco: dados.logradouro || '',
+    bairro: dados.bairro || '',
+    cep: cepLimpo,
+    cidade: dados.municipio || '',
+    uf: dados.uf || '',
+    pais: 'Brasil',
+    contatos: [{
+      nome: dados.nomeContato || dados.nome || '',
+      celular: dados.celular || dados.telefone || '',
+      email: dados.email || '',
+      principal: true
+    }],
+    // Regime tributario baseado nos dados da Receita
+    contribuinte: isPJ ? 9 : 9
   };
-  // Remover undefined
-  if (!body.contatos) delete body.contatos;
-  if (!body.fantasia) delete body.fantasia;
 
   const chamar = async (tk) => fetch('https://www.bling.com.br/Api/v3/contatos', {
     method: 'POST',
