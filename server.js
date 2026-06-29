@@ -140,16 +140,26 @@ async function blingCadastrarContato(dados) {
   let token = await getBlingToken();
   if (!token) return { ok: false, erro: 'Token não disponível' };
 
+  const isPJ = dados.tipo === 'PJ' || (dados.cpfCnpj||'').replace(/\D/g,'').length === 14;
   const body = {
-    nome: dados.nome,
-    tipo: dados.tipo === 'PJ' ? 'J' : 'F',
+    nome: isPJ ? (dados.nomeEmpresa || dados.nome) : dados.nome,
+    fantasia: isPJ ? (dados.fantasia || dados.nomeEmpresa || dados.nome) : '',
+    tipo: isPJ ? 'J' : 'F',
     email: dados.email || '',
     telefone: dados.telefone || '',
     celular: dados.celular || dados.telefone || '',
-    cpfCnpj: dados.cpfCnpj || '',
-    cep: dados.cep || '',
-    situacao: 'A'
+    cpfCnpj: (dados.cpfCnpj||'').replace(/\D/g,''),
+    cep: (dados.cep||'').replace(/\D/g,''),
+    situacao: 'A',
+    // Contato com nome do cliente
+    contatos: dados.nomeContato ? [{
+      nome: dados.nomeContato,
+      celular: dados.celular || dados.telefone || ''
+    }] : undefined
   };
+  // Remover undefined
+  if (!body.contatos) delete body.contatos;
+  if (!body.fantasia) delete body.fantasia;
 
   const chamar = async (tk) => fetch('https://www.bling.com.br/Api/v3/contatos', {
     method: 'POST',
@@ -430,11 +440,20 @@ app.post('/chat', async (req, res) => {
         if (cnpjLimpo.length === 14) {
           dadosReceita = await buscarCNPJ(cnpjLimpo);
           if (dadosReceita) {
-            // Enriquecer cadastro com dados da Receita
-            if (!dadosCadastro.nome || dadosCadastro.nome.length < 3) dadosCadastro.nome = dadosReceita.razaoSocial;
+            // Para PJ: nome SEMPRE e a Razao Social (nao o nome do contato)
+            dadosCadastro.nomeEmpresa = dadosReceita.razaoSocial;
+            dadosCadastro.fantasia = dadosReceita.nomeFantasia || dadosReceita.razaoSocial;
+            dadosCadastro.nomeContato = dadosCadastro.nome; // salvar nome do contato separado
+            // Email e telefone: usar da Receita se nao informado
             if (!dadosCadastro.email) dadosCadastro.email = dadosReceita.email;
             if (!dadosCadastro.telefone) dadosCadastro.telefone = dadosReceita.telefone;
-            if (!dadosCadastro.cep) dadosCadastro.cep = dadosReceita.cep;
+            // Endereco completo da Receita Federal
+            dadosCadastro.cep = dadosReceita.cep;
+            dadosCadastro.logradouro = dadosReceita.logradouro;
+            dadosCadastro.numero = dadosReceita.numero;
+            dadosCadastro.bairro = dadosReceita.bairro;
+            dadosCadastro.municipio = dadosReceita.municipio;
+            dadosCadastro.uf = dadosReceita.uf;
             // Gerar analise de credito inicial
             analiseCredito = await gerarAnaliseCredito(dadosReceita);
           }
