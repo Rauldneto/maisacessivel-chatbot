@@ -324,13 +324,23 @@ function enviar(){
 document.getElementById('sb').onclick=enviar;
 document.getElementById('inp').onkeydown=function(e){if(e.key==='Enter'){e.preventDefault();enviar();}};
 
-// Carregar mensagem inicial
+// Carregar mensagem inicial e adicionar no historico
 (function(){
   var horaMin=new Date().getHours()*60+new Date().getMinutes();
   fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:'__INIT__'}],horaCliente:horaMin,init:true})})
   .then(function(r){return r.json();})
-  .then(function(d){var el=document.getElementById('msg-inicial');if(el&&d.reply)el.innerHTML=d.reply.replace(/\\n/g,'<br>').replace(/\\*\\*(.*?)\\*\\*/g,'<b>$1</b>');})
-  .catch(function(){var el=document.getElementById('msg-inicial');if(el)el.innerHTML='Olá! Como posso ajudar?';});
+  .then(function(d){
+    var el=document.getElementById('msg-inicial');
+    var reply=d.reply||'Olá! Como posso ajudar?';
+    if(el) el.innerHTML=reply.replace(/\\n/g,'<br>').replace(/\\*\\*(.*?)\\*\\*/g,'<b>$1</b>');
+    // Adicionar no historico para o Ace nao repetir
+    H.push({role:'assistant',content:reply});
+  })
+  .catch(function(){
+    var el=document.getElementById('msg-inicial');
+    if(el) el.innerHTML='Olá! Como posso ajudar?';
+    H.push({role:'assistant',content:'Olá! Como posso ajudar?'});
+  });
 })();
   `);
 });
